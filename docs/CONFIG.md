@@ -49,9 +49,8 @@ ui:
 
 配置系统按以下优先级加载配置：
 
-1. **项目根目录的 `config.yml`**（优先，包含所有令牌）
-2. `~/.voice_assistant/config.json`（兼容旧配置）
-3. 默认配置
+1. **项目根目录的 `config.yml`**（包含所有令牌）
+2. 默认配置
 
 ## 安全说明
 
@@ -165,13 +164,13 @@ A: 不会。`config.yml` 已添加到 `.gitignore`。只有 `config.yml.example`
 
 ## 迁移旧配置
 
-如果你之前使用 `~/.voice_assistant/config.json`，可以手动迁移：
+如果你之前使用 `~/.voice_assistant/config.json`，需要手动迁移：
 
 1. 读取旧配置：
 ```bash
 cat ~/.voice_assistant/config.json
 ```
 
-2. 将内容转换为 YAML 格式，保存到 `config.yml`
+2. 将内容转换为 YAML 格式，保存到项目根目录的 `config.yml`
 
-3. 或者直接运行应用，系统会自动兼容旧配置
+3. 参考 `config.yml.example` 的格式进行转换

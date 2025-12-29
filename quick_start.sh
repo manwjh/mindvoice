@@ -158,17 +158,11 @@ install_dependencies() {
 check_config() {
     print_info "检查配置..."
     
-    # 优先检查项目根目录的 config.yml
+    # 检查项目根目录的 config.yml
     PROJECT_CONFIG_YML="$PROJECT_DIR/config.yml"
-    CONFIG_DIR="$HOME/.voice_assistant"
-    CONFIG_FILE="$CONFIG_DIR/config.json"
     
     if [ -f "$PROJECT_CONFIG_YML" ]; then
         print_success "配置文件存在: $PROJECT_CONFIG_YML"
-        print_info "使用项目根目录的 config.yml（包含所有令牌）"
-    elif [ -f "$CONFIG_FILE" ]; then
-        print_success "配置文件存在: $CONFIG_FILE"
-        print_info "使用用户目录的 config.json（兼容模式）"
     else
         print_warning "配置文件不存在，将使用默认配置"
         if [ -f "$PROJECT_DIR/config.yml.example" ]; then

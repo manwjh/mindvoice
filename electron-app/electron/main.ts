@@ -156,7 +156,8 @@ function createWindow(): void {
   if (isDev) {
     // 开发环境：加载Vite开发服务器
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // 默认不打开开发者工具，需要时可按 Cmd+Option+I (macOS) 或 Ctrl+Shift+I (Windows/Linux) 打开
+    // mainWindow.webContents.openDevTools();
   } else {
     // 生产环境：加载打包后的文件
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));

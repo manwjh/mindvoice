@@ -168,5 +168,8 @@
   overflow: hidden;
   position: relative;
   background: #ffffff;
+  min-width: 0; /* 允许flex项目缩小 */
+  display: flex;
+  flex-direction: column;
 }
 

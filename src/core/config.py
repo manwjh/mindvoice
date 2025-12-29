@@ -1,9 +1,8 @@
 """
 配置管理模块
-优先从项目根目录的 config.yml 读取配置，令牌只能从此文件读取
+从项目根目录的 config.yml 读取配置，令牌只能从此文件读取
 """
 import os
-import json
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -13,16 +12,15 @@ class Config:
     """配置管理器
     
     配置优先级：
-    1. 项目根目录的 config.yml（优先，包含所有令牌）
-    2. ~/.voice_assistant/config.json（兼容旧配置）
-    3. 默认配置
+    1. 项目根目录的 config.yml（包含所有令牌）
+    2. 默认配置
     """
     
     def __init__(self, config_dir: Optional[str] = None):
         """初始化配置
         
         Args:
-            config_dir: 配置目录路径，默认为 ~/.voice_assistant
+            config_dir: 配置目录路径，默认为 ~/.voice_assistant（用于存储数据库等）
         """
         # 项目根目录（假设 config.py 在 src/core/ 下）
         project_root = Path(__file__).parent.parent.parent
@@ -34,9 +32,7 @@ class Config:
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         
-        self.user_config_file = self.config_dir / 'config.json'
-        
-        # 加载配置文件（优先从 config.yml 读取）
+        # 加载配置文件
         self._config = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
@@ -44,12 +40,9 @@ class Config:
         
         优先级：
         1. 项目根目录的 config.yml（包含令牌）
-        2. 用户目录的 config.json（兼容）
-        3. 默认配置
+        2. 默认配置
         """
-        config = None
-        
-        # 优先从项目根目录的 config.yml 读取（包含所有令牌）
+        # 从项目根目录的 config.yml 读取（包含所有令牌）
         if self.project_config_file.exists():
             try:
                 with open(self.project_config_file, 'r', encoding='utf-8') as f:
@@ -59,17 +52,6 @@ class Config:
                         return config
             except Exception as e:
                 print(f"[配置] 读取 config.yml 失败: {e}")
-        
-        # 兼容：从用户目录的 config.json 读取
-        if self.user_config_file.exists():
-            try:
-                with open(self.user_config_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    if config:
-                        print(f"[配置] 从 {self.user_config_file} 加载配置（兼容模式）")
-                        return config
-            except Exception as e:
-                print(f"[配置] 读取 config.json 失败: {e}")
         
         # 使用默认配置
         print("[配置] 使用默认配置")
@@ -103,7 +85,7 @@ class Config:
         }
     
     def save(self):
-        """保存配置到文件（保存到 config.yml）"""
+        """保存配置到文件（保存到项目根目录的 config.yml）"""
         try:
             with open(self.project_config_file, 'w', encoding='utf-8') as f:
                 yaml.dump(self._config, f, default_flow_style=False, 

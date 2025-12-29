@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Workspace } from './components/Workspace';
 import { HistoryView } from './components/HistoryView';
+import { Toast } from './components/Toast';
 import { OperationTransformer, Operation } from './utils/operationTransform';
 import './App.css';
 
@@ -26,6 +27,7 @@ function App() {
   const [activeView, setActiveView] = useState<'workspace' | 'history' | 'settings'>('workspace');
   const [records, setRecords] = useState<Record[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   
   // 双缓冲机制
   const asrBufferRef = useRef<string>(''); // ASR缓冲区：存储ASR推送的原始文本
@@ -291,16 +293,15 @@ function App() {
 
   const copyText = async () => {
     if (!text) {
-      setError('没有可复制的文本');
+      setToast({ message: '没有可复制的文本', type: 'error' });
       return;
     }
 
     try {
       await navigator.clipboard.writeText(text);
-      // 可以添加toast提示
-      console.log('文本已复制到剪贴板');
+      setToast({ message: '文本已复制到剪贴板', type: 'success' });
     } catch (e) {
-      setError(`复制失败: ${e}`);
+      setToast({ message: `复制失败: ${e}`, type: 'error' });
     }
   };
 
@@ -616,6 +617,14 @@ function App() {
           </div>
         )}
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

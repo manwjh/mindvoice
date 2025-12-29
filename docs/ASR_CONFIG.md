@@ -196,7 +196,7 @@ EOF
 ./quick_start.sh
 
 # 或
-python main.py
+python api_server.py
 ```
 
 如果配置正确，应用会使用配置的 ASR 提供商。如果配置错误，会在终端显示错误信息。

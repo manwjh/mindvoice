@@ -68,6 +68,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   className="history-btn history-btn-load"
                   onClick={() => onLoadRecord(record.id)}
                   title="查看"
+                  aria-label={`查看记录 ${record.id}`}
                 >
                   查看
                 </button>
@@ -75,6 +76,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   className="history-btn history-btn-delete"
                   onClick={() => onDeleteRecord(record.id)}
                   title="删除"
+                  aria-label={`删除记录 ${record.id}`}
                 >
                   删除
                 </button>

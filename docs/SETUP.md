@@ -74,12 +74,12 @@ cp config.example.json ~/.voice_assistant/config.json
 }
 ```
 
-如果没有配置火山引擎，应用会使用示例 ASR 提供商（仅用于测试）。
+如果没有配置火山引擎，ASR功能将不可用。
 
 ### 3. 运行应用
 
 ```bash
-python main.py
+python api_server.py
 ```
 
 应用启动后：
@@ -177,7 +177,7 @@ python main.py
 source venv/bin/activate
 
 # 运行应用
-python main.py
+python api_server.py
 
 # 查看日志输出
 # 所有日志都会输出到终端

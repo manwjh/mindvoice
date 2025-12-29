@@ -41,10 +41,11 @@
 
 ### 4. UI 层 (UI)
 
-待实现：
-- 状态栏图标
-- 主窗口
-- 控制按钮
+- **Electron前端** (`electron-app/`):
+  - React + TypeScript
+  - 系统托盘图标
+  - 主窗口和控制按钮
+  - 实时文本显示
 
 ## 如何添加新的 ASR 提供商
 
@@ -84,7 +85,7 @@ class BaiduASRProvider(BaseASRProvider):
 
 ### 步骤 2: 注册提供商
 
-在 `main.py` 中加载：
+在 `src/api/server.py` 中加载：
 
 ```python
 plugin_manager.load_plugin_module('src.providers.asr.baidu')
@@ -134,70 +135,48 @@ class JSONFileStorageProvider(BaseStorageProvider):
 
 ### 步骤 2: 注册并配置
 
-在 `main.py` 中加载，并在配置中设置 `storage.type = "json_file"`
+在 `src/api/server.py` 中加载，并在配置中设置 `storage.type = "json_file"`
 
 ## 配置说明
 
-配置文件位置：`~/.voice_assistant/config.json`
+配置文件位置：项目根目录的 `config.yml`
 
 ### ASR 配置
 
-```json
-{
-  "asr": {
-    "provider": "baidu",  // 默认提供商
-    "language": "zh-CN",  // 默认语言
-    "providers": {
-      "baidu": {
-        "api_key": "...",
-        "secret_key": "..."
-      }
-    }
-  }
-}
+```yaml
+asr:
+  provider: baidu  # 默认提供商
+  language: zh-CN  # 默认语言
+  providers:
+    baidu:
+      api_key: "..."
+      secret_key: "..."
 ```
 
 ### 存储配置
 
-```json
-{
-  "storage": {
-    "type": "sqlite",
-    "path": "~/.voice_assistant/history.db"
-  }
-}
+```yaml
+storage:
+  type: sqlite
+  path: ~/.voice_assistant/history.db
 ```
 
-### 环境变量
-
-也可以通过 `.env` 文件配置：
-
-```
-BAIDU_API_KEY=your_key
-BAIDU_SECRET_KEY=your_secret
-DEFAULT_ASR_PROVIDER=baidu
-```
-
-## 运行测试
+## 运行应用
 
 ```bash
 # 激活虚拟环境
 source venv/bin/activate
 
-# 运行主程序
-python main.py
-```
+# 启动API服务器
+python api_server.py
 
-当前输出应该显示：
-```
-语音桌面助手启动中...
-已注册的 ASR 提供商: ['example']
-已注册的存储提供商: ['sqlite']
+# 在另一个终端启动Electron前端
+cd electron-app
+npm run dev
 ```
 
 ## 下一步
 
-1. 实现音频录制器 (`src/utils/audio_recorder.py`)
-2. 实现 UI 界面 (`src/ui/`)
-3. 集成真实的 ASR 服务（百度、讯飞等）
-4. 添加翻译功能
+1. 添加更多 ASR 提供商（百度、讯飞等）
+2. 实现翻译功能
+3. 优化UI界面
