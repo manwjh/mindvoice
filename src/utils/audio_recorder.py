@@ -15,17 +15,19 @@ logger = logging.getLogger(__name__)
 class SoundDeviceRecorder(AudioRecorder):
     """基于 sounddevice 的音频录制器"""
     
-    def __init__(self, rate: int = 16000, channels: int = 1, chunk: int = 1024):
+    def __init__(self, rate: int = 16000, channels: int = 1, chunk: int = 1024, device: Optional[int] = None):
         """初始化音频录制器
         
         Args:
             rate: 采样率
             channels: 声道数
             chunk: 每次读取的帧数
+            device: 音频设备ID，None表示使用默认设备
         """
         self.rate = rate
         self.channels = channels
         self.chunk = chunk
+        self.device = device
         self.state = RecordingState.IDLE
         
         self.stream: Optional[sd.InputStream] = None
@@ -43,8 +45,47 @@ class SoundDeviceRecorder(AudioRecorder):
         self._total_bytes = 0
         self._callback_errors = 0
         
-        logger.info(f"[音频] 初始化音频录制器: rate={rate}Hz, channels={channels}, chunk={chunk}")
+        logger.info(f"[音频] 初始化音频录制器: rate={rate}Hz, channels={channels}, chunk={chunk}, device={device}")
         logger.info(f"[音频] 音频设备信息: {sd.query_devices(kind='input')}")
+    
+    @staticmethod
+    def list_input_devices() -> list[dict]:
+        """获取所有输入音频设备列表
+        
+        Returns:
+            设备列表，每个设备包含 id, name, channels, samplerate 等信息
+        """
+        try:
+            all_devices = sd.query_devices()
+            result = []
+            for device in all_devices:
+                # 筛选出输入设备（max_input_channels > 0）
+                if device.get('max_input_channels', 0) > 0:
+                    result.append({
+                        'id': device['index'],
+                        'name': device['name'],
+                        'channels': device['max_input_channels'],
+                        'samplerate': device.get('default_samplerate', 44100.0),
+                        'hostapi': device.get('hostapi', 0)
+                    })
+            return result
+        except Exception as e:
+            logger.error(f"[音频] 获取设备列表失败: {e}", exc_info=True)
+            return []
+    
+    def set_device(self, device: Optional[int]):
+        """设置音频设备
+        
+        Args:
+            device: 音频设备ID，None表示使用默认设备
+        """
+        if self.state != RecordingState.IDLE:
+            logger.warning(f"[音频] 无法更改设备: 当前状态为 {self.state.value}，请先停止录音")
+            return False
+        
+        self.device = device
+        logger.info(f"[音频] 音频设备已设置为: {device}")
+        return True
     
     def start_recording(self) -> bool:
         """开始录音"""
@@ -61,12 +102,13 @@ class SoundDeviceRecorder(AudioRecorder):
             self._total_bytes = 0
             self._callback_errors = 0
             
-            logger.info(f"[音频] 创建音频输入流: samplerate={self.rate}, channels={self.channels}, blocksize={self.chunk}")
+            logger.info(f"[音频] 创建音频输入流: samplerate={self.rate}, channels={self.channels}, blocksize={self.chunk}, device={self.device}")
             self.stream = sd.InputStream(
                 samplerate=self.rate,
                 channels=self.channels,
                 dtype=np.int16,
                 blocksize=self.chunk,
+                device=self.device,
                 callback=self._audio_callback
             )
             self.stream.start()

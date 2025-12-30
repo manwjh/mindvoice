@@ -3,6 +3,8 @@
   overflow-y: auto;
   background: var(--color-bg-secondary);
   padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .history-loading,
@@ -64,6 +66,12 @@
   box-shadow: var(--shadow-sm);
 }
 
+.history-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .history-title {
   font-size: 28px;
   font-weight: 700;
@@ -81,7 +89,35 @@
   border-radius: var(--radius-lg);
 }
 
+.history-toolbar {
+  padding: 16px 64px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.history-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  user-select: none;
+}
+
+.history-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
 .history-list {
+  flex: 1;
   padding: 32px 64px;
   max-width: 1000px;
   margin: 0 auto;
@@ -97,10 +133,12 @@
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   transition: all var(--transition-base);
-  cursor: pointer;
   box-shadow: var(--shadow-sm);
   position: relative;
   overflow: hidden;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
 }
 
 .history-item::before {
@@ -123,6 +161,25 @@
 
 .history-item:hover::before {
   transform: scaleY(1);
+}
+
+.history-item-selected {
+  border-color: var(--color-primary);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.history-item-selected::before {
+  transform: scaleY(1);
+}
+
+.history-item-checkbox {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.history-item-content-wrapper {
+  flex: 1;
+  min-width: 0;
 }
 
 .history-item-header {
@@ -179,13 +236,13 @@
   border-color: var(--color-info-hover);
 }
 
-.history-btn-delete {
+.history-btn-delete-batch {
   color: var(--color-danger);
   border-color: var(--color-danger);
   background: rgba(239, 68, 68, 0.05);
 }
 
-.history-btn-delete:hover {
+.history-btn-delete-batch:hover {
   background: rgba(239, 68, 68, 0.1);
   border-color: var(--color-danger-hover);
 }
@@ -200,6 +257,48 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   letter-spacing: 0.01em;
+}
+
+.history-pagination {
+  padding: 24px 64px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-primary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.history-page-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-page-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.history-page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.history-page-info {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  padding: 0 12px;
 }
 
 .history-view::-webkit-scrollbar {
@@ -219,4 +318,3 @@
 .history-view::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
 }
-

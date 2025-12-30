@@ -6,37 +6,31 @@ import './Workspace.css';
 interface WorkspaceProps {
   text: string;
   onTextChange: (text: string) => void;
-  // ASR状态（后台输入员）
-  asrState: 'idle' | 'recording' | 'paused' | 'processing';
-  // ASR控制（后台输入员）
-  onStartAsr?: () => void;
-  onPauseAsr?: () => void;
-  onResumeAsr?: () => void;
-  onStopAsr?: () => void;
-  // 保存（只有前端输入员可以操作）
+  // ASR状态
+  asrState: 'idle' | 'recording' | 'paused' | 'stopping';
+  // ASR控制（简化后的接口）
+  onAsrToggle?: () => void; // idle时启动，recording/paused时停止
+  onPauseToggle?: () => void; // recording时暂停，paused时继续
+  // 保存当前内容到历史记录（仅在idle状态时可用）
   onSaveText: () => void;
   // 其他
   onCopyText: () => void;
   onClearText?: () => void;
   apiConnected: boolean;
-  blockEditorRef?: React.RefObject<{ appendAsrText: (text: string) => void }>;
-  hasPendingAsr?: boolean;
+  blockEditorRef?: React.RefObject<{ appendAsrText: (text: string, isDefiniteUtterance?: boolean) => void }>;
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({
   text,
   onTextChange,
   asrState,
-  onStartAsr,
-  onPauseAsr,
-  onResumeAsr,
-  onStopAsr,
+  onAsrToggle,
+  onPauseToggle,
   onSaveText,
   onCopyText,
   onClearText,
   apiConnected,
   blockEditorRef,
-  hasPendingAsr = false,
 }) => {
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
@@ -72,7 +66,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
   // 点击其他地方时隐藏工具栏
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = () => {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) {
         setShowToolbar(false);
@@ -96,7 +90,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       <div className="workspace-header">
         <div className="header-left">
           <div className="status-group">
-            {/* ASR状态（后台输入员） */}
+            {/* ASR状态 */}
             {apiConnected && (
               <div
                 className="status-indicator status-indicator-asr"
@@ -107,104 +101,63 @@ export const Workspace: React.FC<WorkspaceProps> = ({
                 <span className="status-dot" aria-hidden="true"></span>
                 <span className="status-text">
                   {asrState === 'recording'
-                    ? hasPendingAsr
-                      ? 'ASR输入中...（有新的语音输入待应用）'
-                      : 'ASR输入中...'
+                    ? 'ASR输入中...'
                     : asrState === 'paused'
-                    ? hasPendingAsr
-                      ? 'ASR已暂停（有新的语音输入待应用）'
-                      : 'ASR已暂停'
-                    : asrState === 'processing'
-                    ? 'ASR处理中...'
+                    ? 'ASR已暂停'
+                    : asrState === 'stopping'
+                    ? 'ASR正在停止...'
                     : 'ASR未启动'}
                 </span>
-                {hasPendingAsr && (
-                  <span className="pending-asr-indicator" title="停止输入后，新的语音输入将自动应用">
-                    ⏳
-                  </span>
-                )}
               </div>
             )}
           </div>
         </div>
         <div className="header-right">
           <div className="recording-controls">
-            {/* ASR控制（后台输入员） */}
-            {apiConnected && onStartAsr && (
+            {/* 简化的控制按钮：ASR、PAUSE */}
+            {apiConnected && (
               <div className="primary-actions">
-                {asrState === 'idle' ? (
+                {/* ASR按钮：仅在idle时可用，启动ASR */}
+                {onAsrToggle && (
                   <button
-                    onClick={onStartAsr}
+                    onClick={onAsrToggle}
+                    disabled={asrState !== 'idle'}
                     className="control-btn control-btn-primary control-btn-start"
-                    title="启动ASR（后台输入员开始工作）"
+                    title="启动ASR"
                     aria-label="启动ASR"
                   >
                     <span className="btn-icon" aria-hidden="true">🎤</span>
-                    <span className="btn-text">启动ASR</span>
+                    <span className="btn-text">ASR</span>
                   </button>
-                ) : asrState === 'recording' ? (
-                  <>
-                    <button
-                      onClick={onPauseAsr}
-                      className="control-btn control-btn-secondary control-btn-pause"
-                      title="暂停ASR"
-                      aria-label="暂停ASR"
-                    >
-                      <span className="btn-icon" aria-hidden="true">⏸</span>
-                      <span className="btn-text">暂停</span>
-                    </button>
-                    {onStopAsr && (
-                      <button
-                        onClick={onStopAsr}
-                        className="control-btn control-btn-secondary control-btn-stop"
-                        title="停止ASR"
-                        aria-label="停止ASR"
-                      >
-                        <span className="btn-icon" aria-hidden="true">■</span>
-                        <span className="btn-text">停止</span>
-                      </button>
-                    )}
-                  </>
-                ) : asrState === 'paused' ? (
-                  <>
-                    <button
-                      onClick={onResumeAsr}
-                      className="control-btn control-btn-secondary control-btn-resume"
-                      title="恢复ASR"
-                      aria-label="恢复ASR"
-                    >
-                      <span className="btn-icon" aria-hidden="true">▶</span>
-                      <span className="btn-text">继续</span>
-                    </button>
-                    {onStopAsr && (
-                      <button
-                        onClick={onStopAsr}
-                        className="control-btn control-btn-secondary control-btn-stop"
-                        title="停止ASR"
-                        aria-label="停止ASR"
-                      >
-                        <span className="btn-icon" aria-hidden="true">■</span>
-                        <span className="btn-text">停止</span>
-                      </button>
-                    )}
-                  </>
-                ) : null}
+                )}
+
+                {/* PAUSE按钮：仅在recording时可用，停止ASR */}
+                {onPauseToggle && (
+                  <button
+                    onClick={onPauseToggle}
+                    disabled={asrState !== 'recording'}
+                    className="control-btn control-btn-secondary control-btn-pause"
+                    title="停止ASR"
+                    aria-label="停止ASR"
+                  >
+                    <span className="btn-icon" aria-hidden="true">⏸</span>
+                    <span className="btn-text">PAUSE</span>
+                  </button>
+                )}
+
+                {/* SAVE按钮：仅在idle状态时可用 */}
+                <button
+                  onClick={onSaveText}
+                  disabled={asrState !== 'idle' || !text || !text.trim()}
+                  className="control-btn control-btn-primary control-btn-save"
+                  title="保存到历史记录"
+                  aria-label="保存文本"
+                >
+                  <span className="btn-icon" aria-hidden="true">💾</span>
+                  <span className="btn-text">SAVE</span>
+                </button>
               </div>
             )}
-
-            {/* 保存按钮（只有前端输入员可以操作） */}
-            <div className="secondary-actions">
-              <button
-                onClick={onSaveText}
-                disabled={!text || !text.trim()}
-                className="control-btn control-btn-primary control-btn-save"
-                title="保存到历史记录（只有前端输入员可以操作）"
-                aria-label="保存文本"
-              >
-                <span className="btn-icon" aria-hidden="true">💾</span>
-                <span className="btn-text">保存</span>
-              </button>
-            </div>
 
             {/* 工具按钮组 */}
             <div className="tool-actions">

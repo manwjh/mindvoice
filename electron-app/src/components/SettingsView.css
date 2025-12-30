@@ -1,0 +1,401 @@
+.settings-view {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-bg-secondary);
+  padding: 0;
+}
+
+.settings-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 64px;
+}
+
+.settings-content h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 32px;
+  letter-spacing: -0.5px;
+}
+
+.settings-message {
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+  font-size: 14px;
+  font-weight: 500;
+  animation: slideIn 0.3s ease-out;
+}
+
+.settings-message-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-success);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.settings-message-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-section {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.3px;
+}
+
+.settings-section-description {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.settings-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.settings-loading .loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border-light);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.settings-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.settings-empty p {
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.settings-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.settings-device-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  background: var(--color-bg-primary);
+}
+
+.settings-device-item:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.settings-device-item input[type="radio"] {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.settings-device-item:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.settings-device-item:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settings-device-info {
+  flex: 1;
+}
+
+.settings-device-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.settings-device-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.settings-btn {
+  padding: 10px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-dark);
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-btn-refresh {
+  color: var(--color-info);
+  border-color: var(--color-info);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.settings-btn-refresh:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--color-info-hover);
+}
+
+.settings-view::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-view::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+.settings-view::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+  border-radius: 5px;
+  border: 2px solid var(--color-bg-secondary);
+}
+
+.settings-view::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* ASR配置相关样式 */
+.settings-config-source {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.settings-config-source-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  background: var(--color-bg-primary);
+}
+
+.settings-config-source-item:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.settings-config-source-item input[type="radio"] {
+  margin-top: 2px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.settings-config-source-item:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.settings-config-source-item:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settings-config-source-info {
+  flex: 1;
+}
+
+.settings-config-source-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.settings-config-source-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* 表单样式 */
+.settings-form {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.settings-form-group {
+  margin-bottom: 20px;
+}
+
+.settings-form-group:last-child {
+  margin-bottom: 0;
+}
+
+.settings-form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+.settings-form-required {
+  color: var(--color-danger);
+  margin-left: 4px;
+}
+
+.settings-form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  transition: all var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.settings-form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.settings-form-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.settings-form-input[type="password"] {
+  font-family: monospace;
+}
+
+/* 配置预览样式 */
+.settings-config-preview {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.settings-config-preview-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-config-preview-item:last-child {
+  border-bottom: none;
+}
+
+.settings-config-preview-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  min-width: 120px;
+  margin-right: 12px;
+}
+
+.settings-config-preview-value {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* 主要按钮样式 */
+.settings-btn-primary {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.settings-btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.settings-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

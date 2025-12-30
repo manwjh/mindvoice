@@ -128,14 +128,20 @@ class RequestBuilder:
     def new_audio_only_request(seq: int, segment: bytes, is_last: bool = False) -> bytes:
         header = AsrRequestHeader.default_header().with_message_type(MessageType.CLIENT_AUDIO_ONLY_REQUEST)
         if is_last:
-            header.with_message_type_specific_flags(MessageTypeSpecificFlags.NEG_WITH_SEQUENCE)
-            seq = -seq
+            # 根据协议规格：客户端发送最后一包时使用 NEG_SEQUENCE (0b0010)
+            # header后4个字节不为sequence number，仅指示此为最后一包
+            header.with_message_type_specific_flags(MessageTypeSpecificFlags.NEG_SEQUENCE)
         else:
             header.with_message_type_specific_flags(MessageTypeSpecificFlags.POS_SEQUENCE)
         
         req = bytearray()
         req.extend(header.to_bytes())
-        req.extend(struct.pack('>i', seq))
+        
+        # 只有在非最后一包时才包含 sequence number
+        # 最后一包使用 NEG_SEQUENCE (0b0010)，不包含 sequence number
+        if not is_last:
+            req.extend(struct.pack('>i', seq))
+        
         compressed_segment = gzip.compress(segment)
         req.extend(struct.pack('>I', len(compressed_segment)))
         req.extend(compressed_segment)
@@ -242,18 +248,13 @@ class VolcanoASRProvider(BaseASRProvider):
         self.seq = 1
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._result_text = ""
-        self._is_final = False
         self._recognition_event: Optional[asyncio.Event] = None
         
-        # 流式识别相关
         self._streaming_active = False
-        self._stopping = False  # 标记是否正在停止流式识别
+        self._stopping = False
         self._receive_task: Optional[asyncio.Task] = None
-        self._on_text_callback: Optional[Callable[[str, bool], None]] = None  # (text, is_final)
-        self._accumulated_text = ""  # 累积的所有分句的文本
-        self._current_segment_text = ""  # 当前分句的文本
-        self._last_final_text = ""  # 上一个分句的最终文本，用于检测新分句
-        self._last_segment_text = ""  # 上一个分句的文本（包括中间结果），用于检测新分句和累积
+        self._on_text_callback: Optional[Callable[[str, bool], None]] = None
+        self._last_text = ""
     
     @property
     def name(self) -> str:
@@ -267,7 +268,6 @@ class VolcanoASRProvider(BaseASRProvider):
         """初始化火山引擎 ASR"""
         self.base_url = config.get('base_url', 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel')
         self.app_id = config.get('app_id', '')
-        # 优先使用 app_key，如果没有则使用 app_id
         self.app_key = config.get('app_key', '') or config.get('app_id', '')
         self.access_key = config.get('access_key', '')
         
@@ -366,12 +366,32 @@ class VolcanoASRProvider(BaseASRProvider):
     async def _disconnect(self):
         """断开连接"""
         try:
-            if self.conn and not self.conn.closed:
-                await self.conn.close()
-            if self.session and not self.session.closed:
-                await self.session.close()
+            # 关闭WebSocket连接
+            if self.conn:
+                if not self.conn.closed:
+                    logger.debug("[ASR] 正在关闭WebSocket连接...")
+                    await self.conn.close()
+                    logger.debug("[ASR] WebSocket连接已关闭")
+                else:
+                    logger.debug("[ASR] WebSocket连接已关闭，无需再次关闭")
+                self.conn = None
+            
+            # 关闭HTTP会话
+            if self.session:
+                if not self.session.closed:
+                    logger.debug("[ASR] 正在关闭HTTP会话...")
+                    await self.session.close()
+                    logger.debug("[ASR] HTTP会话已关闭")
+                else:
+                    logger.debug("[ASR] HTTP会话已关闭，无需再次关闭")
+                self.session = None
+            
+            logger.info("[ASR] ASR WebSocket连接已断开")
         except Exception as e:
-            logger.error(f"断开连接失败: {e}")
+            logger.error(f"[ASR] 断开连接失败: {e}", exc_info=True)
+            # 即使关闭失败，也清空引用
+            self.conn = None
+            self.session = None
     
     async def _send_full_request(self):
         """发送完整客户端请求"""
@@ -391,10 +411,14 @@ class VolcanoASRProvider(BaseASRProvider):
                 return
             request = RequestBuilder.new_audio_only_request(self.seq, audio_data, is_last)
             request_size = len(request)
-            logger.info(f"[ASR] 发送音频数据: seq={self.seq}, 音频大小={len(audio_data)}字节, 请求大小={request_size}字节, is_last={is_last}")
+            # logger.info(f"[ASR] 发送音频数据: seq={self.seq}, 音频大小={len(audio_data)}字节, 请求大小={request_size}字节, is_last={is_last}")
             await self.conn.send_bytes(request)
-            self.seq += 1
-            logger.debug(f"[ASR] 音频数据已发送，下一个seq={self.seq}")
+            # 只有在非最后一包时才递增序列号（最后一包不包含序列号，因此不递增）
+            if not is_last:
+                self.seq += 1
+                logger.debug(f"[ASR] 音频数据已发送，下一个seq={self.seq}")
+            else:
+                logger.debug(f"[ASR] 最后一个音频包已发送（使用NEG_SEQUENCE，不包含序列号）")
         except Exception as e:
             logger.error(f"[ASR] 发送音频数据失败: {e}", exc_info=True)
     
@@ -407,43 +431,16 @@ class VolcanoASRProvider(BaseASRProvider):
                     try:
                         response = ResponseParser.parse_response(msg.data)
                         
-                        is_last_audio_package = (response.is_last_package or 
-                                               response.message_type_specific_flags == 0b0011)
-                        
                         logger.debug(f"[ASR] 响应解析: code={response.code}, "
-                                   f"is_last_package={response.is_last_package}, "
-                                   f"is_last_audio_package={is_last_audio_package}")
+                                   f"is_last_package={response.is_last_package}")
                         
                         if response.payload_msg:
+                            logger.debug(f"[ASR] ASR响应: {json.dumps(response.payload_msg, ensure_ascii=False, indent=2)}")
+                            
                             result = response.payload_msg.get('result', {})
-                            text = result.get('text', '') if isinstance(result, dict) else ''
-                            
-                            is_final = (
-                                bool(result.get('is_final')) if isinstance(result, dict) else False
-                            ) or bool(response.payload_msg.get('is_final', False)) or is_last_audio_package
-                            
-                            logger.debug(f"[ASR] 收到识别结果: '{text}', 是否最终: {is_final}")
-                            
-                            if text:
-                                if is_final:
-                                    # 最终结果
-                                    self._result_text = text
-                                    self._is_final = True
-                                    logger.info(f"[ASR] 最终结果: '{text}'")
-                                    if self._recognition_event:
-                                        self._recognition_event.set()
-                                else:
-                                    # 中间结果累积（用于实时显示）
-                                    if not self._result_text:
-                                        self._result_text = text
-                                    else:
-                                        # 如果新文本包含旧文本，只取新增部分
-                                        if text.startswith(self._result_text):
-                                            self._result_text = text
-                                        else:
-                                            # 否则直接替换（可能是重新识别）
-                                            self._result_text = text
-                                    logger.debug(f"[ASR] 中间结果: '{self._result_text}'")
+                            if isinstance(result, dict):
+                                # 使用统一的处理方法，确保回调被正确调用
+                                self._handle_recognition_result(result, response.is_last_package)
                         
                         if response.code != 0:
                             error_reasons = {
@@ -456,7 +453,8 @@ class VolcanoASRProvider(BaseASRProvider):
                                 1007: "音频格式错误",
                                 1008: "音频长度错误",
                                 1009: "音频采样率错误",
-                                1010: "音频声道数错误"
+                                1010: "音频声道数错误",
+                                45000081: "连接超时或音频流中断（可能因暂停录音导致）"
                             }
                             reason = error_reasons.get(response.code, f"未知错误码: {response.code}")
                             logger.error(f"[ASR] 错误码: {response.code}, 原因: {reason}")
@@ -464,8 +462,8 @@ class VolcanoASRProvider(BaseASRProvider):
                                 self._recognition_event.set()
                             break
                         
-                        if is_last_audio_package:
-                            logger.debug(f"[ASR] 接收结束: is_last_audio_package={is_last_audio_package}")
+                        if response.is_last_package:
+                            logger.debug(f"[ASR] 接收结束: is_last_package={response.is_last_package}")
                             if self._recognition_event:
                                 self._recognition_event.set()
                             break
@@ -504,7 +502,6 @@ class VolcanoASRProvider(BaseASRProvider):
     async def _recognize_async(self, audio_data: bytes, language: str = "zh-CN") -> str:
         """异步识别音频"""
         self._result_text = ""
-        self._is_final = False
         self._recognition_event = asyncio.Event()
         self.seq = 1
         
@@ -559,10 +556,12 @@ class VolcanoASRProvider(BaseASRProvider):
         return self._initialized and bool(self.access_key and self.app_key)
     
     def set_on_text_callback(self, callback: Optional[Callable[[str, bool], None]]):
-        """设置文本回调函数（用于流式识别）
+        """设置文本回调函数
         
         Args:
-            callback: 回调函数，参数为 (text: str, is_final: bool)
+            callback: 回调函数 (text: str, is_definite_utterance: bool)
+                      is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
+                                             表示一个完整的、确定的语音识别单元已完成
         """
         self._on_text_callback = callback
     
@@ -578,24 +577,15 @@ class VolcanoASRProvider(BaseASRProvider):
             return False
         
         try:
-            # 重置状态
-            self._accumulated_text = ""
-            self._current_segment_text = ""
-            self._last_final_text = ""
-            self._last_segment_text = ""
+            self._last_text = ""
             self._result_text = ""
-            self._is_final = False
             self._stopping = False
             self.seq = 1
             self._recognition_event = asyncio.Event()
             
-            # 发送完整请求
-            logger.debug("[ASR] 发送完整客户端请求（流式）")
             await self._send_full_request()
             await asyncio.sleep(0.2)
             
-            # 启动结果接收任务
-            logger.debug("[ASR] 启动流式结果接收任务")
             self._receive_task = asyncio.create_task(self._receive_streaming_results())
             await asyncio.sleep(0.2)
             
@@ -608,248 +598,230 @@ class VolcanoASRProvider(BaseASRProvider):
             return False
     
     async def send_audio_chunk(self, audio_data: bytes):
-        """发送音频数据块（流式）"""
-        if not self._streaming_active or not self.conn or self.conn.closed:
-            logger.warning("[ASR] 流式识别未激活或连接已关闭，无法发送音频数据块")
+        """发送音频数据块"""
+        if not self.conn or self.conn.closed:
+            return
+        
+        if not self._streaming_active:
             return
         
         try:
-            logger.debug(f"[ASR] 发送音频数据块: {len(audio_data)} 字节")
             await self._send_audio_data(audio_data, is_last=False)
         except Exception as e:
             logger.error(f"[ASR] 发送音频数据块失败: {e}", exc_info=True)
     
     async def stop_streaming_recognition(self) -> str:
         """停止流式识别并返回最终结果"""
+        logger.info("[ASR] 开始停止流式识别...")
+        
+        # 如果流式识别未激活，但连接仍然存在，也需要关闭连接
         if not self._streaming_active:
-            logger.warning("[ASR] 流式识别未激活")
-            return self._accumulated_text
+            logger.warning("[ASR] 流式识别未激活，但检查并关闭连接")
+            # 即使未激活，也要确保连接被关闭
+            await self._disconnect()
+            return self._last_text
         
         try:
-            # 标记正在停止
             self._stopping = True
-            logger.debug("[ASR] 标记流式识别为停止状态")
+            logger.debug("[ASR] 发送最后一个音频包（空包）以结束流式识别...")
             
-            # 发送结束信号
-            logger.debug("[ASR] 发送流式识别结束信号")
-            await self._send_audio_data(b"", is_last=True)
+            # 发送最后一个空音频包，标记流式识别结束
+            if self.conn and not self.conn.closed:
+                try:
+                    await self._send_audio_data(b"", is_last=True)
+                    logger.debug("[ASR] 最后一个音频包已发送")
+                except Exception as e:
+                    logger.warning(f"[ASR] 发送最后一个音频包失败: {e}")
             
-            # 等待最终结果（最多2秒）
+            # 等待最终结果（最多5秒，与voice_service的超时时间一致）
             if self._recognition_event:
                 try:
-                    await asyncio.wait_for(self._recognition_event.wait(), timeout=2.0)
+                    await asyncio.wait_for(self._recognition_event.wait(), timeout=5.0)
+                    logger.debug("[ASR] 收到最终结果信号")
                 except asyncio.TimeoutError:
-                    logger.warning("[ASR] 等待最终结果超时")
+                    logger.warning("[ASR] 等待最终结果超时，继续关闭连接")
             
-            # 等待接收任务完成
+            # 等待更长时间，确保服务器处理完成并收到所有结果
+            # 给接收任务更多时间来处理可能延迟到达的最终结果
+            await asyncio.sleep(1.0)
+            
+            # 再等待一小段时间，确保回调函数已处理最终结果
             await asyncio.sleep(0.5)
+            
+            # 取消接收任务
             if self._receive_task and not self._receive_task.done():
+                logger.debug("[ASR] 取消接收任务...")
                 self._receive_task.cancel()
                 try:
                     await self._receive_task
                 except asyncio.CancelledError:
+                    logger.debug("[ASR] 接收任务已取消")
                     pass
             
-            # 合并最终文本
-            final_text = self._accumulated_text + self._current_segment_text
-            logger.info(f"[ASR] 流式识别完成，最终结果: '{final_text}'")
-            
-            return final_text
+            logger.info(f"[ASR] 流式识别完成，最终结果: '{self._last_text}'")
+            return self._last_text
         except Exception as e:
-            logger.error(f"[ASR] 停止流式识别失败: {e}")
-            return self._accumulated_text
+            logger.error(f"[ASR] 停止流式识别失败: {e}", exc_info=True)
+            return self._last_text
         finally:
+            # 确保状态被重置
             self._streaming_active = False
             self._stopping = False
+            
+            # 确保连接被关闭
+            logger.info("[ASR] 关闭WebSocket连接...")
             await self._disconnect()
+            logger.info("[ASR] WebSocket连接已关闭")
+    
+    def _detect_definite_utterance(self, result: dict, text: str) -> bool:
+        """检测是否为确定的utterance
+        
+        使用 utterances 中的 definite 字段来判断utterance是否确定。
+        需要 show_utterances=True 才能获取 utterances 数据。
+        definite=True 表示确定的utterance（一个完整的语音识别单元），此时返回 True。
+        
+        如果没有 utterances 数据，返回 False（不允许使用标点符号判断）。
+        
+        Returns:
+            bool: True表示检测到确定的utterance，False表示未检测到
+        """
+        utterances = result.get('utterances', [])
+        
+        if not utterances:
+            # 如果没有 utterances 数据，返回 False
+            # 注意：不允许使用标点符号判断，必须依赖 ASR 服务返回的 definite 字段
+            return False
+        
+        # 检查是否有 definite=True 的 utterance
+        for utterance in utterances:
+            if isinstance(utterance, dict):
+                is_definite = utterance.get('definite', False)
+                if is_definite:
+                    utterance_text = utterance.get('text', '')
+                    logger.debug(f"[ASR] 检测到确定utterance: '{utterance_text[:50]}...' (definite=True)")
+                    return True
+        
+        # 如果没有 definite utterance，返回 False
+        return False
+    
+    def _handle_recognition_result(self, result: dict, is_last_package: bool):
+        """处理识别结果
+        
+        Args:
+            result: ASR识别结果字典
+            is_last_package: 是否为最后一个数据包
+        """
+        text = result.get('text', '')
+        if not text:
+            return
+        
+        # 检测是否为确定的utterance（基于ASR服务的definite字段）
+        is_definite_utterance = self._detect_definite_utterance(result, text)
+        
+        self._last_text = text
+        
+        # 更新结果文本（用于非流式识别的返回值）
+        self._result_text = text
+        if is_definite_utterance or is_last_package:
+            logger.info(f"[ASR] 最终结果: '{text}'")
+        else:
+            logger.debug(f"[ASR] 中间结果: '{text}'")
+        
+        # 调用回调函数（用于流式识别），直接传递原始文本
+        if self._on_text_callback:
+            self._on_text_callback(text, is_definite_utterance)
+    
+    def _handle_error_response(self, code: int):
+        """处理错误响应"""
+        error_reasons = {
+            1001: "参数错误",
+            1002: "认证失败",
+            1003: "配额超限",
+            1004: "服务不可用",
+            1005: "内部错误",
+            1006: "请求超时",
+            1007: "音频格式错误",
+            1008: "音频长度错误",
+            1009: "音频采样率错误",
+            1010: "音频声道数错误",
+            45000081: "连接超时或音频流中断（可能因暂停录音导致）"
+        }
+        reason = error_reasons.get(code, f"未知错误码: {code}")
+        logger.error(f"[ASR] 错误码: {code}, 原因: {reason}")
+        if self._recognition_event:
+            self._recognition_event.set()
+    
+    def _should_continue_streaming(self, is_last_package: bool) -> bool:
+        """判断是否应该继续流式识别"""
+        if not is_last_package:
+            return True
+        
+        if self._stopping:
+            logger.debug("[ASR] 收到停止信号，结束流式识别")
+            if self._recognition_event:
+                self._recognition_event.set()
+            return False
+        
+        logger.debug("[ASR] 当前语音片段结束，继续等待后续音频")
+        return True
     
     async def _receive_streaming_results(self):
         """接收流式识别结果"""
         try:
             async for msg in self.conn:
                 logger.debug(f"[ASR] 收到消息类型: {msg.type}")
+                
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     try:
                         response = ResponseParser.parse_response(msg.data)
                         
-                        is_last_audio_package = (response.is_last_package or 
-                                               response.message_type_specific_flags == 0b0011)
-                        
                         if response.payload_msg:
+                            logger.debug(f"[ASR] ASR响应: {json.dumps(response.payload_msg, ensure_ascii=False, indent=2)}")
+                            
                             result = response.payload_msg.get('result', {})
-                            text = result.get('text', '') if isinstance(result, dict) else ''
+                            if isinstance(result, dict):
+                                self._handle_recognition_result(result, response.is_last_package)
                             
-                            is_final = (
-                                bool(result.get('is_final')) if isinstance(result, dict) else False
-                            ) or bool(response.payload_msg.get('is_final', False)) or is_last_audio_package
-                            
-                            if text:
-                                if is_final:
-                                    # 最终结果：ASR按分句返回累积文本
-                                    # 每个分句结束时，ASR返回的是该分句的文本（可能包含该分句的重复，如"你好。你好。你好。"）
-                                    # 但不包含之前分句的文本
-                                    
-                                    # 检测是否是新分句
-                                    # ASR按分句返回文本，每个分句结束时返回该分句的最终文本
-                                    # 简化逻辑：如果新文本不是以上一个分句开头，就认为是新分句
-                                    is_new_segment = False
-                                    if self._last_final_text:
-                                        # 如果新文本以上一个分句开头，说明是同一分句的更新
-                                        # 否则是新分句
-                                        if text.startswith(self._last_final_text):
-                                            # 同一分句的更新（ASR可能重复返回或扩展）
-                                            is_new_segment = False
-                                        else:
-                                            # 新分句
-                                            is_new_segment = True
+                            if response.code != 0:
+                                # 45000081 错误码处理：
+                                # - 如果是用户主动停止（_stopping=True），这是正常的关闭过程，优雅处理
+                                # - 如果是暂停状态，可能是连接超时，也应该优雅处理
+                                if response.code == 45000081:
+                                    if self._stopping:
+                                        logger.info(f"[ASR] 连接关闭（错误码: {response.code}），用户主动停止，正常结束")
                                     else:
-                                        # 第一个分句
-                                        is_new_segment = True
-                                    
-                                    logger.debug(f"[ASR] 分句检测: 上一个='{self._last_final_text}', 当前='{text}', 是否新分句={is_new_segment}")
-                                    
-                                    if is_new_segment:
-                                        # 新分句：将之前累积的所有分句文本加上新分句
-                                        if self._accumulated_text:
-                                            # 添加空格分隔不同分句
-                                            if not self._accumulated_text.endswith(' ') and not self._accumulated_text.endswith('\n'):
-                                                self._accumulated_text += " "
-                                        old_accumulated = self._accumulated_text
-                                        self._accumulated_text += text
-                                        logger.info(f"[ASR] 新分句完成: 上一个分句='{self._last_final_text}', 新分句='{text}', 累积前='{old_accumulated}', 累积后='{self._accumulated_text}'")
+                                        logger.warning(f"[ASR] 连接超时（错误码: {response.code}），可能是暂停录音导致，继续等待...")
+                                    # 设置事件以允许正常结束流程
+                                    if self._recognition_event:
+                                        self._recognition_event.set()
+                                    # 如果是停止状态，正常结束；如果是暂停状态，继续等待
+                                    if self._stopping:
+                                        break
                                     else:
-                                        # 同一分句的更新：ASR可能重复返回同一分句的累积文本
-                                        # 如果新文本与上一个不同，更新当前分句
-                                        if text != self._last_final_text:
-                                            # 从累积文本中移除上一个分句，添加新分句
-                                            # 注意：这里假设上一个分句在累积文本的末尾
-                                            if self._accumulated_text.endswith(self._last_final_text):
-                                                self._accumulated_text = self._accumulated_text[:-len(self._last_final_text)].rstrip()
-                                                if self._accumulated_text and not self._accumulated_text.endswith(' '):
-                                                    self._accumulated_text += " "
-                                                self._accumulated_text += text
-                                            else:
-                                                # 如果无法精确匹配，直接追加（这种情况不应该发生）
-                                                if self._accumulated_text and not self._accumulated_text.endswith(' '):
-                                                    self._accumulated_text += " "
-                                                self._accumulated_text += text
-                                            logger.debug(f"[ASR] 分句更新: '{text}' -> 累积: '{self._accumulated_text}'")
-                                        # 如果完全相同，不做任何操作
-                                    
-                                    self._current_segment_text = ""
-                                    self._last_final_text = text
-                                    self._last_segment_text = text  # 也更新上一个分句的文本
-                                    final_text = self._accumulated_text
-                                    
-                                    # 回调最终结果（传递累积的所有分句文本）
-                                    logger.info(f"[ASR] 准备回调最终结果: 累积文本='{final_text}'")
-                                    if self._on_text_callback:
-                                        self._on_text_callback(final_text, True)
-                                        logger.info(f"[ASR] 已调用回调函数")
-                                    
-                                    # 注意：不设置 _recognition_event，因为流式识别还在继续
-                                    # _recognition_event 只在流式识别真正结束时设置（错误、连接关闭、主动停止）
+                                        continue
                                 else:
-                                    # 中间结果：更新当前片段
-                                    # 检测是否是新分句的开始
-                                    is_new_segment_start = False
-                                    if self._last_segment_text:
-                                        # 如果新文本不包含上一个分句的文本，说明是新分句的开始
-                                        # 使用 startswith 检查，因为新分句通常不会以上一个分句开头
-                                        if not text.startswith(self._last_segment_text):
-                                            # 进一步检查：如果新文本完全不包含上一个分句的任何部分，肯定是新分句
-                                            # 或者新文本的开头与上一个分句完全不同
-                                            last_words = self._last_segment_text.split()[:2] if self._last_segment_text else []
-                                            if last_words:
-                                                last_start = ' '.join(last_words)
-                                                if not text.startswith(last_start):
-                                                    is_new_segment_start = True
-                                            else:
-                                                # 如果上一个分句很短或为空，直接比较
-                                                if self._last_segment_text not in text:
-                                                    is_new_segment_start = True
-                                    else:
-                                        # 第一个分句
-                                        is_new_segment_start = True
-                                    
-                                    if is_new_segment_start:
-                                        # 新分句的开始：将上一个分句的文本累积起来（如果还没有累积）
-                                        # 优先使用 _last_final_text（如果有），否则使用 _last_segment_text
-                                        segment_to_accumulate = self._last_final_text if self._last_final_text else self._last_segment_text
-                                        
-                                        if segment_to_accumulate and segment_to_accumulate not in self._accumulated_text:
-                                            # 上一个分句还没有被累积，现在累积它
-                                            if self._accumulated_text:
-                                                if not self._accumulated_text.endswith(' ') and not self._accumulated_text.endswith('\n'):
-                                                    self._accumulated_text += " "
-                                            self._accumulated_text += segment_to_accumulate
-                                            logger.info(f"[ASR] 检测到新分句，累积上一个分句: '{segment_to_accumulate}' -> 累积: '{self._accumulated_text}'")
-                                        
-                                        # 更新当前片段
-                                        self._current_segment_text = text
-                                        self._last_segment_text = text
-                                        
-                                        # 新分句的中间结果：累积之前的分句加上当前分句
-                                        display_text = (self._accumulated_text + " " + self._current_segment_text) if self._accumulated_text else self._current_segment_text
-                                    else:
-                                        # 同一分句的中间结果：更新当前片段
-                                        self._current_segment_text = text
-                                        self._last_segment_text = text
-                                        
-                                        # 同一分句的中间结果：累积之前的分句加上当前分句
-                                        display_text = (self._accumulated_text + self._current_segment_text) if self._accumulated_text else self._current_segment_text
-                                    
-                                    logger.debug(f"[ASR] 流式中间结果: '{display_text}'")
-                                    
-                                    # 回调中间结果
-                                    if self._on_text_callback:
-                                        self._on_text_callback(display_text, False)
-                        
-                        if response.code != 0:
-                            error_reasons = {
-                                1001: "参数错误",
-                                1002: "认证失败",
-                                1003: "配额超限",
-                                1004: "服务不可用",
-                                1005: "内部错误",
-                                1006: "请求超时",
-                                1007: "音频格式错误",
-                                1008: "音频长度错误",
-                                1009: "音频采样率错误",
-                                1010: "音频声道数错误"
-                            }
-                            reason = error_reasons.get(response.code, f"未知错误码: {response.code}")
-                            logger.error(f"[ASR] 错误码: {response.code}, 原因: {reason}")
-                            if self._recognition_event:
-                                self._recognition_event.set()
-                            break
-                        
-                        # 注意：is_last_audio_package 只表示一个语音片段的结束，不是整个流式识别会话的结束
-                        # 对于长时间运行的语音记事本，应该继续接收后续的音频识别结果
-                        # 只有当流式识别被主动停止（self._stopping = True）或连接关闭时，才退出循环
-                        if is_last_audio_package:
-                            if self._stopping:
-                                # 用户主动停止，设置事件并退出循环
-                                logger.debug(f"[ASR] 收到停止信号，结束流式识别")
-                                if self._recognition_event:
-                                    self._recognition_event.set()
+                                    self._handle_error_response(response.code)
+                                    break
+                            
+                            if not self._should_continue_streaming(response.is_last_package):
                                 break
-                            else:
-                                # 正常的语音片段结束，继续接收后续的音频识别结果
-                                logger.debug(f"[ASR] 当前语音片段结束，继续等待后续音频")
+                                
                     except Exception as e:
                         logger.error(f"[ASR] 解析流式响应失败: {e}", exc_info=True)
                         continue
+                        
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     logger.error(f"[ASR] WebSocket错误: {msg.data}")
                     if self._recognition_event:
                         self._recognition_event.set()
                     break
+                    
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
                     logger.info("[ASR] WebSocket连接已关闭")
                     if self._recognition_event:
                         self._recognition_event.set()
                     break
+                    
         except Exception as e:
             logger.error(f"[ASR] 接收流式结果异常: {e}", exc_info=True)
             if self._recognition_event:

@@ -119,7 +119,7 @@ electron-app/
 
 2. **WebSocket**: 实时文本和状态更新
    - 端点: `ws://127.0.0.1:8765/ws`
-   - 消息类型: `text_update`, `state_change`, `error`
+   - 消息类型: `initial_state`, `text_update`, `text_final`, `state_change`, `error`
 
 ## 配置
 

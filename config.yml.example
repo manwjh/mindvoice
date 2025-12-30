@@ -4,7 +4,10 @@
 
 # ASR 配置（火山引擎）
 asr:
-  base_url: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
+  base_url: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async  # 双向流式优化版本（推荐）
+  # 其他可选版本：
+  # - bigmodel: 双向流式普通版本（每包输入对应每包返回）
+  # - bigmodel_nostream: 流式输入模式（准确率更高，延迟较大）
   app_id: ""  # 请填入你的 app_id
   app_key: ""  # 请填入你的 app_key
   access_key: ""  # 请填入你的 access_key
@@ -19,7 +22,11 @@ audio:
   format: WAV  # 音频格式
   channels: 1  # 声道数（1=单声道，2=立体声）
   rate: 16000  # 采样率（Hz）
-  chunk: 1024  # 每次读取的帧数
+  chunk: 3200  # 每次读取的帧数（3200帧 = 200ms，符合火山引擎推荐的最优性能配置）
+  # 说明：火山引擎建议单包音频大小为100~200ms，200ms性能最优
+  # 计算公式：chunk = rate × 时长（秒）
+  # - 200ms: 16000 × 0.2 = 3200帧（推荐）
+  # - 100ms: 16000 × 0.1 = 1600帧
 
 # UI 配置
 ui:

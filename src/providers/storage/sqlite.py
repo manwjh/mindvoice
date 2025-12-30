@@ -133,3 +133,35 @@ class SQLiteStorageProvider(BaseStorageProvider):
         conn.close()
         
         return success
+    
+    def count_records(self) -> int:
+        """获取记录总数"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM records')
+        count = cursor.fetchone()[0]
+        conn.close()
+        
+        return count
+    
+    def delete_records(self, record_ids: list[str]) -> int:
+        """批量删除记录
+        
+        Args:
+            record_ids: 记录ID列表
+            
+        Returns:
+            成功删除的记录数
+        """
+        if not record_ids:
+            return 0
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        placeholders = ','.join(['?'] * len(record_ids))
+        cursor.execute(f'DELETE FROM records WHERE id IN ({placeholders})', record_ids)
+        deleted_count = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        return deleted_count

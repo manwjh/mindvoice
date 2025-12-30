@@ -3,7 +3,7 @@
 """
 import asyncio
 import logging
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 from ..core.base import RecordingState, AudioRecorder
 from ..core.config import Config
 from ..providers.asr.volcano import VolcanoASRProvider
@@ -27,18 +27,13 @@ class VoiceService:
         self.asr_provider: Optional[VolcanoASRProvider] = None
         self.storage_provider: Optional[SQLiteStorageProvider] = None
         
-        self._on_text_callback: Optional[Callable[[str], None]] = None  # 保持向后兼容，但实际会传递累积文本
+        self._on_text_callback: Optional[Callable[[str, bool], None]] = None
         self._on_state_change_callback: Optional[Callable[[RecordingState], None]] = None
-        self._on_error_callback: Optional[Callable[[str, str], None]] = None  # error_type, message
+        self._on_error_callback: Optional[Callable[[str, str], None]] = None
         
-        # 流式识别相关
         self._streaming_active = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        
-        # 当前文本（用于API查询）
         self._current_text = ""
-        
-        # 当前会话记录ID（用于增量保存）
         self._current_session_id: Optional[str] = None
         
         self._initialize_providers()
@@ -46,21 +41,35 @@ class VoiceService:
     def _initialize_providers(self):
         """初始化提供商"""
         logger.info("[语音服务] 初始化提供商...")
+        # 根据配置源自动选择使用用户配置还是厂商配置
+        config_source = self.config.get_asr_config_source()
+        use_user_config = (config_source == 'user')
+        self._initialize_asr_provider(use_user_config=use_user_config)
         
-        # 初始化火山引擎 ASR
-        asr_config = {
-            'base_url': self.config.get('asr.base_url', 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel'),
-            'app_id': self.config.get('asr.app_id', ''),
-            'app_key': self.config.get('asr.app_key', ''),
-            'access_key': self.config.get('asr.access_key', '')
+        storage_config = {
+            'path': self.config.get('storage.path', '~/.voice_assistant/history.db')
         }
+        logger.info(f"[语音服务] 初始化存储提供商: path={storage_config['path']}")
+        self.storage_provider = SQLiteStorageProvider()
+        self.storage_provider.initialize(storage_config)
+        logger.info("[语音服务] 存储提供商初始化完成")
+    
+    def _initialize_asr_provider(self, use_user_config: bool = True):
+        """初始化ASR提供商
         
-        logger.info(f"[语音服务] ASR配置: base_url={asr_config['base_url']}, "
-                   f"app_id={'已设置' if asr_config['app_id'] else '未设置'}, "
-                   f"app_key={'已设置' if asr_config['app_key'] else '未设置'}, "
-                   f"access_key={'已设置' if asr_config['access_key'] else '未设置'}")
+        Args:
+            use_user_config: 是否使用用户自定义配置
+        """
+        # 获取ASR配置（根据use_user_config决定使用用户配置还是厂商配置）
+        asr_config = self.config.get_asr_config(use_user_config=use_user_config)
+        config_source = self.config.get_asr_config_source()
         
-        if asr_config['access_key'] and asr_config['app_key']:
+        logger.info(f"[语音服务] ASR配置源: {config_source}, base_url={asr_config.get('base_url', '')}, "
+                   f"app_id={'已设置' if asr_config.get('app_id') else '未设置'}, "
+                   f"app_key={'已设置' if asr_config.get('app_key') else '未设置'}, "
+                   f"access_key={'已设置' if asr_config.get('access_key') else '未设置'}")
+        
+        if asr_config.get('access_key') and asr_config.get('app_key'):
             logger.info("[语音服务] 初始化火山引擎 ASR 提供商...")
             self.asr_provider = VolcanoASRProvider()
             if not self.asr_provider.initialize(asr_config):
@@ -73,25 +82,45 @@ class VoiceService:
                 logger.info("[语音服务] 火山引擎 ASR 提供商初始化成功")
         else:
             logger.warning("[语音服务] ASR配置不完整，ASR功能将不可用")
-            # 不在这里显示错误，让主程序在用户尝试使用时再提示
+            self.asr_provider = None
+    
+    def reload_asr_provider(self, use_user_config: bool = True):
+        """重新加载ASR提供商（用于配置更改后）
+        
+        Args:
+            use_user_config: 是否使用用户自定义配置
+        """
+        logger.info(f"[语音服务] 重新加载ASR提供商，使用{'用户' if use_user_config else '厂商'}配置")
+        # 如果正在录音，先停止
+        if self.get_state() != RecordingState.IDLE:
+            logger.warning("[语音服务] 正在录音，无法重新加载ASR提供商")
+            return False
+        
+        # 清理旧的提供商
+        if self.asr_provider:
+            try:
+                self.asr_provider.cleanup()
+            except Exception as e:
+                logger.warning(f"[语音服务] 清理旧ASR提供商失败: {e}")
             self.asr_provider = None
         
-        # 初始化存储提供商
-        storage_config = {
-            'path': self.config.get('storage.path', '~/.voice_assistant/history.db')
-        }
-        logger.info(f"[语音服务] 初始化存储提供商: path={storage_config['path']}")
-        self.storage_provider = SQLiteStorageProvider()
-        self.storage_provider.initialize(storage_config)
-        logger.info("[语音服务] 存储提供商初始化完成")
+        # 重新初始化
+        self._initialize_asr_provider(use_user_config=use_user_config)
+        return True
     
     def set_recorder(self, recorder: AudioRecorder):
         """设置录音器"""
         logger.info("[语音服务] 设置录音器")
         self.recorder = recorder
     
-    def set_on_text_callback(self, callback: Callable[[str], None]):
-        """设置文本回调函数"""
+    def set_on_text_callback(self, callback: Callable[[str, bool], None]):
+        """设置文本回调函数
+        
+        Args:
+            callback: 回调函数 (text: str, is_definite_utterance: bool)
+                      is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
+                                             表示一个完整的、确定的语音识别单元已完成
+        """
         self._on_text_callback = callback
     
     def set_on_state_change_callback(self, callback: Callable[[RecordingState], None]):
@@ -114,41 +143,27 @@ class VoiceService:
             logger.warning("[语音服务] 录音已在进行中，无法重复开始")
             return False
         
-        # 重置会话ID（开始新会话）
         self._current_session_id = None
         
-        # 启动流式 ASR 识别
         if self.asr_provider:
             logger.info("[语音服务] 启动流式 ASR 识别...")
             try:
-                # 获取事件循环
                 try:
                     self._loop = asyncio.get_running_loop()
-                    logger.debug("[语音服务] 获取运行中的事件循环（FastAPI环境）")
                     loop_running = True
                 except RuntimeError:
-                    # 没有运行中的事件循环，尝试获取或创建
                     try:
                         self._loop = asyncio.get_event_loop()
                         loop_running = self._loop.is_running()
-                        logger.debug(f"[语音服务] 获取事件循环，运行状态: {loop_running}")
                     except RuntimeError:
                         self._loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(self._loop)
                         loop_running = False
-                        logger.info("[语音服务] 创建新事件循环")
                 
-                # 设置文本回调
                 self.asr_provider.set_on_text_callback(self._on_asr_text_received)
-                logger.debug("[语音服务] 已设置ASR文本回调")
-                
-                # 启动流式识别
                 language = self.config.get('asr.language', 'zh-CN')
-                logger.info(f"[语音服务] 启动流式识别，语言: {language}")
                 
-                # 根据事件循环状态选择不同的执行方式
                 if loop_running:
-                    # 事件循环正在运行（FastAPI环境），使用create_task
                     async def start_async():
                         result = await self.asr_provider.start_streaming_recognition(language)
                         if not result:
@@ -161,11 +176,8 @@ class VoiceService:
                             logger.info("[语音服务] 流式识别已启动")
                     
                     asyncio.create_task(start_async())
-                    # 假设启动成功，实际结果会在异步任务中处理
                     self._streaming_active = True
-                    logger.info("[语音服务] 已提交流式识别启动任务")
                 else:
-                    # 事件循环未运行，使用run_until_complete
                     if not self._loop.run_until_complete(self.asr_provider.start_streaming_recognition(language)):
                         error_msg = "启动流式 ASR 识别失败，请检查网络连接和ASR服务配置"
                         logger.error(f"[语音服务] {error_msg}")
@@ -174,11 +186,8 @@ class VoiceService:
                         return False
                     
                     self._streaming_active = True
-                    logger.info("[语音服务] 流式识别已启动")
                 
-                # 设置音频数据回调（实时发送音频块）
                 self.recorder.set_on_audio_chunk_callback(self._on_audio_chunk)
-                logger.info("[语音服务] 已设置音频数据块回调")
             except Exception as e:
                 error_msg = f"启动流式识别失败: {str(e)}"
                 logger.error(f"[语音服务] {error_msg}", exc_info=True)
@@ -199,22 +208,20 @@ class VoiceService:
         return success
     
     def _on_audio_chunk(self, audio_data: bytes):
-        """音频数据块回调（实时发送到 ASR）"""
+        """音频数据块回调"""
+        # 如果录音器处于暂停状态，不发送音频数据
+        if self.recorder and self.recorder.get_state() == RecordingState.PAUSED:
+            return
+        
         if self._streaming_active and self.asr_provider and self._loop:
             try:
-                # 异步发送音频数据块（使用线程安全的方式）
                 if not self._loop.is_closed():
-                    # 如果事件循环正在运行，使用 call_soon_threadsafe
                     if self._loop.is_running():
-                        logger.debug(f"[语音服务] 发送音频数据块到ASR: {len(audio_data)} 字节")
-                        future = asyncio.run_coroutine_threadsafe(
+                        asyncio.run_coroutine_threadsafe(
                             self.asr_provider.send_audio_chunk(audio_data),
                             self._loop
                         )
-                        # 不等待结果，避免阻塞
                     else:
-                        # 如果事件循环未运行，直接运行
-                        logger.debug(f"[语音服务] 发送音频数据块到ASR（直接运行）: {len(audio_data)} 字节")
                         self._loop.run_until_complete(
                             self.asr_provider.send_audio_chunk(audio_data)
                         )
@@ -224,42 +231,23 @@ class VoiceService:
                 if self._on_error_callback:
                     self._on_error_callback("音频传输失败", error_msg)
     
-    def _on_asr_text_received(self, text: str, is_final: bool):
+    def _on_asr_text_received(self, text: str, is_definite_utterance: bool):
         """ASR 文本接收回调
         
         Args:
-            text: 识别文本（ASR提供商已经累积了所有片段的文本）
-            is_final: 是否为最终结果（一个片段的最终结果）
+            text: 识别的文本内容
+            is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
+                                   表示一个完整的、确定的语音识别单元已完成
         """
-        logger.info(f"[语音服务] 收到ASR文本: '{text}', is_final={is_final}")
-        # 更新当前文本（ASR提供商已经累积了所有片段的文本）
-        # 对于流式识别，text 已经是累积后的完整文本（accumulated_text + current_segment_text）
+        logger.info(f"[语音服务] 收到ASR文本: '{text}', is_definite_utterance={is_definite_utterance}")
         self._current_text = text
         
-        # 分句固化时自动增量保存（音频笔记本的核心功能）
-        if is_final and text and self.storage_provider:
-            # 如果是新会话，创建新记录
-            if not self._current_session_id:
-                import uuid
-                self._current_session_id = str(uuid.uuid4())
-                language = self.config.get('asr.language', 'zh-CN')
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano',
-                    'session_id': self._current_session_id,
-                    'is_session': True  # 标记为会话记录
-                }
-                logger.info(f"[语音服务] 创建新会话记录: {self._current_session_id}")
-                # 保存初始记录（可能为空文本）
-                self.storage_provider.save_record("", metadata)
-            else:
-                # 更新现有会话记录
-                logger.debug(f"[语音服务] 更新会话记录: {self._current_session_id}, 文本长度: {len(text)}")
-                self._update_session_record(text)
+        # 注意：不再自动保存会话记录，只有用户明确点击SAVE按钮时才会保存到历史记录
+        # 文本会通过回调传递给前端，前端会更新工作区域显示
         
+        # 调用回调函数，传递文本和确定utterance标识
         if self._on_text_callback:
-            # 直接传递累积后的文本，前端会直接显示
-            self._on_text_callback(text)
+            self._on_text_callback(text, is_definite_utterance)
     
     def pause_recording(self) -> bool:
         """暂停录音"""
@@ -298,51 +286,71 @@ class VoiceService:
             logger.error("[语音服务] 录音器未设置，无法停止")
             return None
         
-        self._notify_state_change(RecordingState.PROCESSING)
-        logger.info("[语音服务] 状态: PROCESSING")
+        self._notify_state_change(RecordingState.STOPPING)
+        logger.info("[语音服务] 状态: STOPPING")
         
         # 停止录音
         logger.info("[语音服务] 停止录音器...")
         self.recorder.stop_recording()
         
         # 停止流式识别并获取最终结果
+        # 清除音频回调（无论流式识别是否激活）
+        self.recorder.set_on_audio_chunk_callback(None)
+        logger.debug("[语音服务] 已清除音频数据块回调")
+        
         final_text = None
-        if self._streaming_active and self.asr_provider and self._loop:
-            logger.info("[语音服务] 停止流式识别...")
+        # 如果ASR提供商存在，尝试停止流式识别并关闭WebSocket连接
+        if self.asr_provider and self._loop:
+            logger.info("[语音服务] 停止流式识别并关闭ASR WebSocket连接...")
             try:
-                # 清除音频回调
-                self.recorder.set_on_audio_chunk_callback(None)
-                logger.debug("[语音服务] 已清除音频数据块回调")
-                
-                # 停止流式识别
                 if not self._loop.is_closed():
-                    logger.info("[语音服务] 等待ASR最终结果...")
-                    # 检查事件循环是否正在运行
+                    logger.info("[语音服务] 等待ASR最终结果并关闭连接...")
                     if self._loop.is_running():
-                        # 事件循环正在运行（FastAPI环境），使用线程安全的方式
-                        logger.debug("[语音服务] 事件循环正在运行，使用线程安全方式停止流式识别")
                         future = asyncio.run_coroutine_threadsafe(
                             self.asr_provider.stop_streaming_recognition(),
                             self._loop
                         )
-                        # 等待结果（最多5秒）
                         try:
-                            final_text = future.result(timeout=5.0)
+                            final_text = future.result(timeout=6.0)  # 增加超时时间到6秒
                             logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
                         except Exception as e:
                             error_msg = f"等待ASR最终结果超时或失败: {str(e)}"
-                            logger.error(f"[语音服务] {error_msg}", exc_info=True)
-                            if self._on_error_callback:
+                            logger.warning(f"[语音服务] {error_msg}")
+                            # 即使超时，也等待一小段时间看是否有回调到达
+                            import time
+                            start_time = time.time()
+                            while time.time() - start_time < 2.0:  # 最多等待2秒
+                                if self._current_text and self._current_text != final_text:
+                                    final_text = self._current_text
+                                    logger.info(f"[语音服务] 通过回调获取到最终结果: '{final_text}'")
+                                    break
+                                time.sleep(0.1)
+                            if not final_text:
+                                logger.warning("[语音服务] 未能获取ASR最终结果，使用当前文本")
+                                final_text = self._current_text
+                            if self._on_error_callback and not final_text:
                                 self._on_error_callback("ASR停止失败", error_msg)
                     else:
-                        # 事件循环未运行，使用run_until_complete
-                        logger.debug("[语音服务] 事件循环未运行，使用run_until_complete")
                         final_text = self._loop.run_until_complete(
                             self.asr_provider.stop_streaming_recognition()
                         )
                         logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
+                else:
+                    logger.warning("[语音服务] 事件循环已关闭，无法正常停止ASR")
+                    # 即使事件循环已关闭，也尝试直接调用disconnect（如果可能）
+                    if hasattr(self.asr_provider, '_disconnect'):
+                        try:
+                            # 创建一个新的事件循环来执行断开连接
+                            new_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(new_loop)
+                            new_loop.run_until_complete(self.asr_provider._disconnect())
+                            new_loop.close()
+                            logger.info("[语音服务] 已通过新事件循环关闭ASR连接")
+                        except Exception as e:
+                            logger.error(f"[语音服务] 通过新事件循环关闭连接失败: {e}")
+                
                 self._streaming_active = False
-                logger.info("[语音服务] 流式识别已停止")
+                logger.info("[语音服务] 流式识别已停止，WebSocket连接已关闭")
             except Exception as e:
                 error_msg = f"停止流式识别失败: {str(e)}"
                 logger.error(f"[语音服务] {error_msg}", exc_info=True)
@@ -350,30 +358,16 @@ class VoiceService:
                     self._on_error_callback("ASR停止失败", error_msg)
                 self._streaming_active = False
         else:
-            logger.info("[语音服务] 流式识别未激活，跳过停止ASR")
-        
-        # 最终保存记录（如果会话记录已存在，则更新；否则创建新记录）
-        if final_text and self.storage_provider:
-            if self._current_session_id:
-                # 更新会话记录为最终版本
-                logger.info(f"[语音服务] 更新会话记录为最终版本: {self._current_session_id}")
-                self._update_session_record(final_text)
-                logger.info("[语音服务] 会话记录已更新为最终版本")
+            if not self.asr_provider:
+                logger.info("[语音服务] ASR提供商未初始化，跳过停止ASR")
+            elif not self._loop:
+                logger.info("[语音服务] 事件循环未设置，跳过停止ASR")
             else:
-                # 如果没有会话记录（可能是非流式识别），创建新记录
-                language = self.config.get('asr.language', 'zh-CN')
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano'
-                }
-                logger.info(f"[语音服务] 保存识别结果到存储: '{final_text}'")
-                self.storage_provider.save_record(final_text, metadata)
-                logger.info("[语音服务] 识别结果已保存")
+                logger.info("[语音服务] 流式识别未激活，但已清除音频回调")
         
-        # 重置会话ID
+        # 注意：不再自动保存记录，只有用户明确点击SAVE按钮时才会保存到历史记录
+        # 清空会话ID，让保存操作独立处理
         self._current_session_id = None
-        
-        # 更新当前文本
         if final_text:
             self._current_text = final_text
         
@@ -393,42 +387,30 @@ class VoiceService:
             self._on_state_change_callback(state)
     
     def _update_session_record(self, text: str):
-        """更新会话记录（增量保存）"""
+        """更新会话记录"""
         if not self._current_session_id or not self.storage_provider:
             return
         
         try:
-            # 获取现有记录
             existing_record = self.storage_provider.get_record(self._current_session_id)
+            language = self.config.get('asr.language', 'zh-CN')
+            metadata = {
+                'language': language,
+                'provider': 'volcano',
+                'session_id': self._current_session_id,
+                'is_session': True,
+                'updated_at': self._get_timestamp() if existing_record else None
+            }
+            
             if existing_record:
-                # 更新文本
-                language = self.config.get('asr.language', 'zh-CN')
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano',
-                    'session_id': self._current_session_id,
-                    'is_session': True,
-                    'updated_at': self._get_timestamp()
-                }
-                # 使用存储提供商的更新方法（如果支持）
                 if hasattr(self.storage_provider, 'update_record'):
                     self.storage_provider.update_record(self._current_session_id, text, metadata)
                 else:
-                    # 如果不支持更新，删除旧记录并创建新记录
                     self.storage_provider.delete_record(self._current_session_id)
                     self.storage_provider.save_record(text, metadata)
-                    logger.debug(f"[语音服务] 会话记录已更新（通过删除重建）: {self._current_session_id}")
             else:
-                # 如果记录不存在，创建新记录
-                language = self.config.get('asr.language', 'zh-CN')
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano',
-                    'session_id': self._current_session_id,
-                    'is_session': True
-                }
+                metadata['is_session'] = True
                 self.storage_provider.save_record(text, metadata)
-                logger.debug(f"[语音服务] 会话记录已创建: {self._current_session_id}")
         except Exception as e:
             logger.error(f"[语音服务] 更新会话记录失败: {e}", exc_info=True)
     

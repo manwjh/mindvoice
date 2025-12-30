@@ -6,6 +6,7 @@ import asyncio
 import logging
 import sys
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Set, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -24,11 +25,38 @@ from src.utils.audio_recorder import SoundDeviceRecorder
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_logging()
+    setup_voice_service()
+    
+    yield
+    
+    global voice_service, recorder
+    logger.info("[API] 正在关闭服务...")
+    
+    if voice_service:
+        try:
+            voice_service.cleanup()
+        except Exception as e:
+            logger.error(f"清理语音服务失败: {e}")
+    
+    if recorder:
+        try:
+            recorder.cleanup()
+        except Exception as e:
+            logger.error(f"清理录音器失败: {e}")
+    
+    logger.info("[API] 服务已关闭")
+
+
 # 创建FastAPI应用
 app = FastAPI(
     title="语音桌面助手 API",
     version="1.0.0",
-    description="独立的后端API服务，支持任何前端框架"
+    description="独立的后端API服务，支持任何前端框架",
+    lifespan=lifespan
 )
 
 # 配置CORS（允许任何前端访问，便于后续更换前端框架）
@@ -75,17 +103,6 @@ class StopRecordingResponse(BaseModel):
     message: str
 
 
-class SyncEditRequest(BaseModel):
-    """同步用户编辑请求"""
-    text: str
-
-
-class SyncEditResponse(BaseModel):
-    """同步用户编辑响应"""
-    success: bool
-    message: str
-
-
 class RecordItem(BaseModel):
     """记录项模型"""
     id: str
@@ -105,49 +122,52 @@ class ListRecordsResponse(BaseModel):
 
 # ==================== WebSocket广播函数 ====================
 
-def broadcast_text(text: str):
-    """向所有WebSocket连接广播文本更新"""
-    if active_connections:
-        message = {"type": "text_update", "text": text}
-        disconnected = set()
-        for connection in active_connections:
-            try:
-                asyncio.create_task(connection.send_json(message))
-            except Exception as e:
-                logger.warning(f"发送WebSocket消息失败: {e}")
-                disconnected.add(connection)
-        
+async def broadcast_safe(message: dict):
+    """安全的广播，保证消息顺序和可靠性
+    
+    改进点：
+    1. 不使用全局锁（避免事件循环冲突）
+    2. 使用gather等待所有发送完成
+    3. 统一错误处理
+    """
+    if not active_connections:
+        return
+    
+    disconnected = set()
+    tasks = []
+    
+    # 为每个连接创建发送任务
+    for connection in list(active_connections):
+        task = connection.send_json(message)
+        tasks.append((connection, task))
+    
+    # 等待所有发送完成
+    results = await asyncio.gather(*[t for _, t in tasks], return_exceptions=True)
+    
+    # 处理发送结果
+    for (conn, _), result in zip(tasks, results):
+        if isinstance(result, Exception):
+            logger.error(f"[API] 广播失败: {result}")
+            disconnected.add(conn)
+    
+    # 移除失败的连接
+    if disconnected:
         active_connections.difference_update(disconnected)
+        logger.info(f"[API] 已移除 {len(disconnected)} 个失败的连接，当前连接数: {len(active_connections)}")
 
-
-def broadcast_state(state: str):
-    """向所有WebSocket连接广播状态变化"""
-    if active_connections:
-        message = {"type": "state_change", "state": state}
-        disconnected = set()
-        for connection in active_connections:
-            try:
-                asyncio.create_task(connection.send_json(message))
-            except Exception as e:
-                logger.warning(f"发送WebSocket状态失败: {e}")
-                disconnected.add(connection)
-        
-        active_connections.difference_update(disconnected)
-
-
-def broadcast_error(error_type: str, message: str):
-    """向所有WebSocket连接广播错误"""
-    if active_connections:
-        error_msg = {"type": "error", "error_type": error_type, "message": message}
-        disconnected = set()
-        for connection in active_connections:
-            try:
-                asyncio.create_task(connection.send_json(error_msg))
-            except Exception as e:
-                logger.warning(f"发送WebSocket错误失败: {e}")
-                disconnected.add(connection)
-        
-        active_connections.difference_update(disconnected)
+def broadcast(message: dict):
+    """向所有WebSocket连接广播消息（同步接口，兼容旧代码）"""
+    if not active_connections:
+        return
+    
+    # 🔧 修复：获取当前运行的事件循环
+    try:
+        loop = asyncio.get_running_loop()
+        # 在当前事件循环中创建任务
+        asyncio.create_task(broadcast_safe(message))
+    except RuntimeError:
+        # 如果没有运行的事件循环，记录警告
+        logger.warning("[API] 无法广播消息：没有运行的事件循环")
 
 
 # ==================== 服务初始化 ====================
@@ -163,23 +183,38 @@ def setup_voice_service():
         config = Config()
         
         # 初始化录音器
+        audio_device = config.get('audio.device', None)
+        if audio_device is not None:
+            try:
+                audio_device = int(audio_device)
+            except (ValueError, TypeError):
+                audio_device = None
+        
         recorder = SoundDeviceRecorder(
             rate=config.get('audio.rate', 16000),
             channels=config.get('audio.channels', 1),
-            chunk=config.get('audio.chunk', 1024)
+            chunk=config.get('audio.chunk', 1024),
+            device=audio_device
         )
         
         # 初始化语音服务
         voice_service = VoiceService(config)
         voice_service.set_recorder(recorder)
         
-        # 设置回调 - 通过WebSocket广播
-        voice_service.set_on_text_callback(lambda text: broadcast_text(text))
+        # 设置回调 - 直接通过WebSocket广播
+        # 根据 is_definite 决定消息类型：中间结果用 text_update，确定结果用 text_final
+        # 🔧 优化：使用broadcast函数（内部会调用broadcast_safe保证顺序）
+        voice_service.set_on_text_callback(
+            lambda text, is_definite: broadcast({
+                "type": "text_final" if is_definite else "text_update",
+                "text": text
+            })
+        )
         voice_service.set_on_state_change_callback(
-            lambda state: broadcast_state(state.value)
+            lambda state: broadcast({"type": "state_change", "state": state.value})
         )
         voice_service.set_on_error_callback(
-            lambda error_type, msg: broadcast_error(error_type, msg)
+            lambda error_type, msg: broadcast({"type": "error", "error_type": error_type, "message": msg})
         )
         
         logger.info("[API] 语音服务初始化完成")
@@ -208,34 +243,6 @@ def setup_logging():
     logger.info(f"[API] 日志系统已初始化，日志级别: {log_level}")
 
 
-# ==================== 生命周期事件 ====================
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动事件"""
-    setup_logging()
-    setup_voice_service()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭事件"""
-    global voice_service, recorder
-    logger.info("[API] 正在关闭服务...")
-    
-    if voice_service:
-        try:
-            voice_service.cleanup()
-        except Exception as e:
-            logger.error(f"清理语音服务失败: {e}")
-    
-    if recorder:
-        try:
-            recorder.cleanup()
-        except Exception as e:
-            logger.error(f"清理录音器失败: {e}")
-    
-    logger.info("[API] 服务已关闭")
 
 
 # ==================== HTTP REST API ====================
@@ -256,6 +263,8 @@ async def root():
             "list_records": "/api/records",
             "get_record": "/api/records/{record_id}",
             "delete_record": "/api/records/{record_id}",
+            "delete_records": "/api/records/delete",
+            "save_text": "/api/text/save",
             "websocket": "/ws"
         }
     }
@@ -353,60 +362,9 @@ async def stop_recording(request: StopRecordingRequest = StopRecordingRequest())
         raise HTTPException(status_code=503, detail="语音服务未初始化")
     
     try:
-        # 保存会话ID（停止录音后会重置）
-        session_id = getattr(voice_service, '_current_session_id', None)
-        
         # 停止录音，获取ASR最终文本
+        # 注意：不自动保存记录，只有用户点击SAVE按钮时才会保存
         final_asr_text = voice_service.stop_recording()
-        
-        # 确定要保存的最终文本：优先使用用户编辑版本
-        final_text_to_save = request.user_edited_text if request.user_edited_text else final_asr_text
-        
-        # 保存最终记录到历史记录
-        if final_text_to_save and voice_service.storage_provider:
-            language = voice_service.config.get('asr.language', 'zh-CN')
-            
-            if session_id and request.user_edited_text:
-                # 如果有会话记录且用户编辑了文本，更新会话记录为用户编辑版本
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano',
-                    'session_id': session_id,
-                    'is_session': True,
-                    'user_edited': True,
-                    'asr_text': final_asr_text,
-                    'updated_at': voice_service._get_timestamp()
-                }
-                if hasattr(voice_service.storage_provider, 'update_record'):
-                    success = voice_service.storage_provider.update_record(session_id, request.user_edited_text, metadata)
-                    if success:
-                        logger.info(f"[API] 已更新会话记录为用户编辑版本: {session_id}")
-                    else:
-                        # 更新失败，创建新记录
-                        metadata.pop('session_id', None)
-                        metadata.pop('is_session', None)
-                        record_id = voice_service.storage_provider.save_record(final_text_to_save, metadata)
-                        logger.info(f"[API] 更新会话记录失败，已创建新记录: {record_id}")
-                else:
-                    # 不支持更新，创建新记录
-                    metadata = {
-                        'language': language,
-                        'provider': 'volcano',
-                        'user_edited': True,
-                        'asr_text': final_asr_text
-                    }
-                    record_id = voice_service.storage_provider.save_record(final_text_to_save, metadata)
-                    logger.info(f"[API] 已保存最终记录到历史: {record_id}, 用户编辑: True")
-            else:
-                # 没有会话记录或没有用户编辑，创建新记录
-                metadata = {
-                    'language': language,
-                    'provider': 'volcano',
-                    'user_edited': bool(request.user_edited_text),
-                    'asr_text': final_asr_text if request.user_edited_text else None
-                }
-                record_id = voice_service.storage_provider.save_record(final_text_to_save, metadata)
-                logger.info(f"[API] 已保存最终记录到历史: {record_id}, 用户编辑: {bool(request.user_edited_text)}")
         
         return StopRecordingResponse(
             success=True,
@@ -415,55 +373,6 @@ async def stop_recording(request: StopRecordingRequest = StopRecordingRequest())
         )
     except Exception as e:
         logger.error(f"停止录音失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/recording/sync-edit", response_model=SyncEditResponse)
-async def sync_user_edit(request: SyncEditRequest):
-    """同步用户编辑的文本到当前会话记录"""
-    if not voice_service:
-        raise HTTPException(status_code=503, detail="语音服务未初始化")
-    
-    try:
-        # 获取当前会话ID
-        session_id = getattr(voice_service, '_current_session_id', None)
-        if not session_id:
-            return SyncEditResponse(
-                success=False,
-                message="当前没有活动的录音会话"
-            )
-        
-        # 更新会话记录的用户编辑版本
-        if voice_service.storage_provider:
-            metadata = {
-                'language': voice_service.config.get('asr.language', 'zh-CN'),
-                'provider': 'volcano',
-                'session_id': session_id,
-                'is_session': True,
-                'user_edited': True,  # 标记为用户编辑版本
-                'updated_at': voice_service._get_timestamp()
-            }
-            
-            # 更新记录
-            if hasattr(voice_service.storage_provider, 'update_record'):
-                success = voice_service.storage_provider.update_record(
-                    session_id, 
-                    request.text, 
-                    metadata
-                )
-                if success:
-                    logger.info(f"[API] 用户编辑已同步到会话记录: {session_id}")
-                    return SyncEditResponse(
-                        success=True,
-                        message="用户编辑已同步"
-                    )
-        
-        return SyncEditResponse(
-            success=False,
-            message="同步失败"
-        )
-    except Exception as e:
-        logger.error(f"同步用户编辑失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -521,9 +430,13 @@ async def list_records(limit: int = 50, offset: int = 0):
     
     try:
         records = voice_service.storage_provider.list_records(limit=limit, offset=offset)
-        # 计算总数（简化实现，实际可以优化）
-        all_records = voice_service.storage_provider.list_records(limit=10000, offset=0)
-        total = len(all_records)
+        # 使用count_records方法优化总数计算
+        if hasattr(voice_service.storage_provider, 'count_records'):
+            total = voice_service.storage_provider.count_records()
+        else:
+            # 降级方案：如果存储提供者不支持count，使用旧方法
+            all_records = voice_service.storage_provider.list_records(limit=10000, offset=0)
+            total = len(all_records)
         
         record_items = [
             RecordItem(
@@ -590,6 +503,279 @@ async def delete_record(record_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class DeleteRecordsRequest(BaseModel):
+    """批量删除记录请求"""
+    record_ids: list[str]
+
+
+@app.post("/api/records/delete", response_model=dict)
+async def delete_records(request: DeleteRecordsRequest):
+    """批量删除记录"""
+    if not voice_service or not voice_service.storage_provider:
+        raise HTTPException(status_code=503, detail="存储服务未初始化")
+    
+    try:
+        if not request.record_ids:
+            return {"success": False, "message": "未选择要删除的记录"}
+        
+        # 检查存储提供者是否支持批量删除
+        if hasattr(voice_service.storage_provider, 'delete_records'):
+            deleted_count = voice_service.storage_provider.delete_records(request.record_ids)
+            return {
+                "success": True,
+                "message": f"已删除 {deleted_count} 条记录",
+                "deleted_count": deleted_count
+            }
+        else:
+            # 降级方案：逐个删除
+            deleted_count = 0
+            for record_id in request.record_ids:
+                if voice_service.storage_provider.delete_record(record_id):
+                    deleted_count += 1
+            return {
+                "success": True,
+                "message": f"已删除 {deleted_count} 条记录",
+                "deleted_count": deleted_count
+            }
+    except Exception as e:
+        logger.error(f"批量删除记录失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 音频设备管理 API ====================
+
+class AudioDeviceInfo(BaseModel):
+    """音频设备信息"""
+    id: int
+    name: str
+    channels: int
+    samplerate: float
+    hostapi: int
+
+
+class ListAudioDevicesResponse(BaseModel):
+    """列出音频设备响应"""
+    success: bool
+    devices: list[AudioDeviceInfo]
+    current_device: Optional[int] = None
+
+
+class SetAudioDeviceRequest(BaseModel):
+    """设置音频设备请求"""
+    device: Optional[int] = None  # None表示使用默认设备
+
+
+class SetAudioDeviceResponse(BaseModel):
+    """设置音频设备响应"""
+    success: bool
+    message: str
+
+
+@app.get("/api/audio/devices", response_model=ListAudioDevicesResponse)
+async def list_audio_devices():
+    """获取所有输入音频设备列表"""
+    if not recorder:
+        raise HTTPException(status_code=503, detail="录音器未初始化")
+    
+    try:
+        devices = SoundDeviceRecorder.list_input_devices()
+        device_infos = [
+            AudioDeviceInfo(
+                id=d['id'],
+                name=d['name'],
+                channels=d['channels'],
+                samplerate=d['samplerate'],
+                hostapi=d['hostapi']
+            )
+            for d in devices
+        ]
+        
+        current_device = recorder.device
+        
+        return ListAudioDevicesResponse(
+            success=True,
+            devices=device_infos,
+            current_device=current_device
+        )
+    except Exception as e:
+        logger.error(f"获取音频设备列表失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/audio/device", response_model=SetAudioDeviceResponse)
+async def set_audio_device(request: SetAudioDeviceRequest):
+    """设置音频设备"""
+    global recorder, config
+    
+    if not recorder:
+        raise HTTPException(status_code=503, detail="录音器未初始化")
+    
+    # 检查录音器状态
+    if recorder.get_state() != RecordingState.IDLE:
+        return SetAudioDeviceResponse(
+            success=False,
+            message="无法更改设备：请先停止录音"
+        )
+    
+    try:
+        # 设置设备
+        success = recorder.set_device(request.device)
+        if not success:
+            return SetAudioDeviceResponse(
+                success=False,
+                message="设置设备失败"
+            )
+        
+        # 保存到配置
+        if config:
+            config.set('audio.device', request.device)
+            config.save()
+            logger.info(f"[API] 音频设备已设置为: {request.device}，配置已保存")
+        
+        return SetAudioDeviceResponse(
+            success=True,
+            message=f"音频设备已设置为: {request.device if request.device is not None else '默认设备'}"
+        )
+    except Exception as e:
+        logger.error(f"设置音频设备失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== ASR配置管理 API ====================
+
+class ASRConfigResponse(BaseModel):
+    """ASR配置响应"""
+    success: bool
+    config_source: str  # 'user' 或 'vendor'
+    current_config: dict
+    vendor_config: dict
+    message: Optional[str] = None
+
+
+class SetASRConfigRequest(BaseModel):
+    """设置ASR配置请求"""
+    use_user_config: bool  # True=使用用户配置，False=使用厂商配置
+    config: Optional[dict] = None  # 用户自定义配置（仅在use_user_config=True时需要）
+
+
+class SetASRConfigResponse(BaseModel):
+    """设置ASR配置响应"""
+    success: bool
+    message: str
+
+
+@app.get("/api/asr/config", response_model=ASRConfigResponse)
+async def get_asr_config():
+    """获取ASR配置（包括当前配置、厂商配置和配置源）"""
+    if not config:
+        raise HTTPException(status_code=503, detail="配置未初始化")
+    
+    try:
+        config_source = config.get_asr_config_source()
+        current_config = config.get_asr_config(use_user_config=(config_source == 'user'))
+        vendor_config = config.get_vendor_asr_config()
+        
+        # 隐藏敏感信息（只显示前8个字符）
+        def mask_sensitive(value: str) -> str:
+            if not value or len(value) <= 8:
+                return '***' if value else ''
+            return value[:8] + '...'
+        
+        current_config_masked = {
+            'base_url': current_config.get('base_url', ''),
+            'app_id': current_config.get('app_id', ''),
+            'app_key': mask_sensitive(current_config.get('app_key', '')),
+            'access_key': mask_sensitive(current_config.get('access_key', '')),
+            'language': current_config.get('language', 'zh-CN')
+        }
+        
+        vendor_config_masked = {
+            'base_url': vendor_config.get('base_url', ''),
+            'app_id': vendor_config.get('app_id', ''),
+            'app_key': mask_sensitive(vendor_config.get('app_key', '')),
+            'access_key': mask_sensitive(vendor_config.get('access_key', '')),
+            'language': vendor_config.get('language', 'zh-CN')
+        }
+        
+        return ASRConfigResponse(
+            success=True,
+            config_source=config_source,
+            current_config=current_config_masked,
+            vendor_config=vendor_config_masked
+        )
+    except Exception as e:
+        logger.error(f"获取ASR配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/asr/config", response_model=SetASRConfigResponse)
+async def set_asr_config(request: SetASRConfigRequest):
+    """设置ASR配置"""
+    global voice_service
+    
+    if not config:
+        raise HTTPException(status_code=503, detail="配置未初始化")
+    
+    # 检查录音器状态
+    if voice_service and voice_service.get_state() != RecordingState.IDLE:
+        return SetASRConfigResponse(
+            success=False,
+            message="无法更改配置：请先停止录音"
+        )
+    
+    try:
+        if request.use_user_config:
+            # 使用用户自定义配置
+            if not request.config:
+                return SetASRConfigResponse(
+                    success=False,
+                    message="使用用户配置时，必须提供配置内容"
+                )
+            
+            # 验证配置
+            required_fields = ['app_id', 'app_key', 'access_key']
+            for field in required_fields:
+                if not request.config.get(field):
+                    return SetASRConfigResponse(
+                        success=False,
+                        message=f"配置不完整：缺少 {field}"
+                    )
+            
+            # 保存用户配置
+            user_config = {
+                'base_url': request.config.get('base_url', 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel'),
+                'app_id': request.config.get('app_id', ''),
+                'app_key': request.config.get('app_key', ''),
+                'access_key': request.config.get('access_key', ''),
+                'language': request.config.get('language', 'zh-CN')
+            }
+            config.save_user_asr_config(user_config)
+            
+            # 重新加载ASR提供商
+            if voice_service:
+                voice_service.reload_asr_provider(use_user_config=True)
+            
+            return SetASRConfigResponse(
+                success=True,
+                message="用户自定义配置已保存并生效"
+            )
+        else:
+            # 使用厂商配置（删除用户配置）
+            config.delete_user_asr_config()
+            
+            # 重新加载ASR提供商
+            if voice_service:
+                voice_service.reload_asr_provider(use_user_config=False)
+            
+            return SetASRConfigResponse(
+                success=True,
+                message="已切换到厂商配置"
+            )
+    except Exception as e:
+        logger.error(f"设置ASR配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== WebSocket API ====================
 
 @app.websocket("/ws")
@@ -600,15 +786,18 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"[API] WebSocket连接已建立，当前连接数: {len(active_connections)}")
     
     try:
-        # 发送初始状态
+        # 发送初始状态（原生app设计：初始状态应该是干净的）
         if voice_service:
             state = voice_service.get_state()
             current_text = getattr(voice_service, '_current_text', '')
-            await websocket.send_json({
+            # 只在有实际文本时才包含text字段（原生app初始状态应该是空的）
+            initial_state_msg = {
                 "type": "initial_state",
-                "state": state.value,
-                "text": current_text
-            })
+                "state": state.value
+            }
+            if current_text:  # 只在有文本时包含
+                initial_state_msg["text"] = current_text
+            await websocket.send_json(initial_state_msg)
         
         # 保持连接，等待客户端消息
         while True:

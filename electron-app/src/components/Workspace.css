@@ -68,7 +68,7 @@
   box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
 }
 
-.status-indicator[data-status='processing'] .status-dot {
+.status-indicator[data-status='stopping'] .status-dot {
   background: var(--color-primary);
   box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
   animation: pulse-dot 1.5s infinite;
@@ -218,12 +218,12 @@
 }
 
 .control-btn-primary.control-btn-stop {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background: linear-gradient(135deg, var(--color-danger) 0%, var(--color-danger-hover) 100%);
   color: var(--color-text-inverse);
 }
 
 .control-btn-primary.control-btn-stop:hover:not(:disabled) {
-  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  background: linear-gradient(135deg, var(--color-danger-hover) 0%, #b91c1c 100%);
 }
 
 /* 辅助操作按钮样式 */

@@ -11,7 +11,7 @@ class RecordingState(Enum):
     IDLE = "idle"  # 空闲
     RECORDING = "recording"  # 录音中
     PAUSED = "paused"  # 暂停
-    PROCESSING = "processing"  # 处理中
+    STOPPING = "stopping"  # 正在停止
 
 
 class ASRProvider(ABC):
