@@ -180,53 +180,68 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
           currentIdx = index;
         }
 
-        // 🎯 基于标点的智能去重与合并逻辑
+        // 🎯 基于标点和重叠检测的智能去重与合并逻辑
         if (isDefiniteUtterance) {
-          // 先将当前正在写入的block中的内容清空（因为这是中间结果）
+          // 清空当前正在写入的block（因为中间结果会被definite覆盖）
           updated[currentIdx] = {
             ...updated[currentIdx],
             content: '',
             isAsrWriting: false,
           };
           
-          // 查找上一个已固化的block（倒数第二个，因为当前是最后一个）
+          // 查找上一个已固化的block
           const prevBlockIdx = currentIdx > 0 ? currentIdx - 1 : -1;
           
           if (prevBlockIdx >= 0) {
             const prevBlock = updated[prevBlockIdx];
             const prevContent = prevBlock.content.trim();
             
-            // 检查上一个block是否以标点结尾
-            const PUNCTUATIONS = /[。！？；：，、]$/;
-            const prevHasPunctuation = PUNCTUATIONS.test(prevContent);
-            
-            // 如果上一个block无标点且有内容，检查是否需要合并
-            if (!prevHasPunctuation && prevContent.length > 0) {
-              const overlapLength = findOverlapLength(prevContent, newText);
+            if (prevContent.length > 0) {
+              // 直接检查最后2个字符是否包含标点（中文或英文）
+              const last2Chars = prevContent.slice(-2);
+              const hasPunctuationInLast2 = /[。！？；：，、.!?;:,]/.test(last2Chars);
               
-              if (overlapLength >= 2) {
-                // 检测到重叠，去重并合并到上一个block
-                const deduplicatedText = newText.substring(overlapLength);
-                updated[prevBlockIdx] = {
-                  ...updated[prevBlockIdx],
-                  content: prevContent + deduplicatedText,
-                };
-                console.log(`[BlockEditor] ✂️ 检测到${overlapLength}字符重叠，合并到上一个block: '${newText.substring(0, overlapLength)}' → '${deduplicatedText}'`);
+              if (!hasPunctuationInLast2) {
+                // 最后几个字符无标点，可能是ASR分段不准确，检查重叠
+                const overlapLength = findOverlapLength(prevContent, newText);
                 
-                // 当前block保持为空的写入block
-                updated[currentIdx] = {
-                  ...updated[currentIdx],
-                  content: '',
-                  isAsrWriting: true,
-                };
+                if (overlapLength >= 2) {
+                  // 检测到重叠，去重并合并到上一个block
+                  const deduplicatedText = newText.substring(overlapLength);
+                  updated[prevBlockIdx] = {
+                    ...updated[prevBlockIdx],
+                    content: prevContent + deduplicatedText,
+                  };
+                  console.log(`[BlockEditor] ✂️ 最后2字符无标点，检测到${overlapLength}字符重叠，合并: '${newText.substring(0, overlapLength)}'`);
+                  
+                  // 当前block保持为空的写入block
+                  updated[currentIdx] = {
+                    ...updated[currentIdx],
+                    content: '',
+                    isAsrWriting: true,
+                  };
+                } else {
+                  // 没有重叠，将新文本放入当前block并固化
+                  updated[currentIdx] = {
+                    ...updated[currentIdx],
+                    content: newText,
+                    isAsrWriting: false,
+                  };
+                  console.log(`[BlockEditor] 📄 最后2字符无标点且无重叠，放入当前block`);
+                  
+                  // 创建新的空block用于下一个输入
+                  const nextBlock = createEmptyBlock(true);
+                  updated.push(nextBlock);
+                  asrWritingBlockIdRef.current = nextBlock.id;
+                }
               } else {
-                // 没有重叠，将新文本放入当前block并固化
+                // 最后几个字符包含标点，说明是完整的utterance边界，不检查重叠
                 updated[currentIdx] = {
                   ...updated[currentIdx],
                   content: newText,
                   isAsrWriting: false,
                 };
-                console.log(`[BlockEditor] 📄 无重叠，放入当前block`);
+                console.log(`[BlockEditor] ✅ 上一个block最后2字符有标点，独立句子`);
                 
                 // 创建新的空block用于下一个输入
                 const nextBlock = createEmptyBlock(true);
@@ -234,13 +249,13 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
                 asrWritingBlockIdRef.current = nextBlock.id;
               }
             } else {
-              // 上一个block有标点或为空，新文本是独立句子
+              // 上一个block为空，新文本是独立句子
               updated[currentIdx] = {
                 ...updated[currentIdx],
                 content: newText,
                 isAsrWriting: false,
               };
-              console.log(`[BlockEditor] ✅ 上一个block有标点，独立句子`);
+              console.log(`[BlockEditor] ✅ 上一个block为空，独立句子`);
               
               // 创建新的空block用于下一个输入
               const nextBlock = createEmptyBlock(true);
