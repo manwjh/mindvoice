@@ -8,46 +8,51 @@ import { AppButton, ButtonGroup } from '../../shared/AppButton';
 import './VoiceNote.css';
 
 interface BlockEditorHandle {
-  appendAsrText: (text: string, isDefiniteUtterance?: boolean) => void;
+  appendAsrText: (text: string, isDefiniteUtterance?: boolean, timeInfo?: { startTime?: number; endTime?: number }) => void;
   setNoteInfoEndTime: () => void;
   getNoteInfo: () => NoteInfo | undefined;
+  getBlocks: () => any[];  // ⭐ 新增
+  setBlocks: (blocks: any[]) => void;  // ⭐ 新增
 }
 
 interface VoiceNoteProps {
   text: string;
   onTextChange: (text: string) => void;
   // ASR状态
-  asrState: 'idle' | 'recording' | 'paused' | 'stopping';
-  // ASR控制（简化后的接口）
-  onAsrToggle?: () => void; // idle时启动，recording/paused时停止
-  onPauseToggle?: () => void; // recording时暂停，paused时继续
+  asrState: 'idle' | 'recording' | 'stopping';
+  // ASR控制
+  onAsrStart?: () => void; // 启动ASR
+  onAsrStop?: () => void; // 停止ASR
   // 保存当前内容到历史记录（仅在idle状态时可用）
   onSaveText: (noteInfo?: NoteInfo) => void;
   // 其他
   onCopyText: () => void;
-  onClearText?: () => void;
+  onCreateNewNote?: () => void; // 保存当前笔记并创建新笔记
   apiConnected: boolean;
   blockEditorRef?: React.RefObject<BlockEditorHandle>;
   // 工作会话
   isWorkSessionActive: boolean;
   onStartWork: () => void;
   onEndWork: () => void;
+  // ⭐ 新增：用于恢复完整的 blocks 数据
+  initialBlocks?: any[];
 }
 
 export const VoiceNote: React.FC<VoiceNoteProps> = ({
   text,
   onTextChange,
   asrState,
-  onAsrToggle,
-  onPauseToggle,
+  onAsrStart,
+  onAsrStop,
   onSaveText,
   onCopyText,
-  onClearText,
+  onCreateNewNote,
   apiConnected,
   blockEditorRef,
   isWorkSessionActive,
   onStartWork,
   onEndWork,
+  initialBlocks,
 }) => {
   const [showToolbar, setShowToolbar] = useState(false);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
@@ -151,49 +156,64 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
       subtitle="语音转文字，实时记录"
       icon="📝"
       statusIndicator={
-        apiConnected ? (
-          <StatusIndicator 
-            status="idle"
-            appStatus={getAppStatus()}
-            appStatusText={
-              !apiConnected ? 'API未连接' :
-              isWorkSessionActive ? '记录中' :
-              '空闲'
-            }
-            asrStatus={asrState}
-          />
-        ) : null
+        <StatusIndicator 
+          status={asrState}
+          appStatus={getAppStatus()}
+          appStatusText={
+            !apiConnected ? 'API未连接' :
+            isWorkSessionActive ? '记录中' :
+            '空闲'
+          }
+          asrStatus={asrState}
+        />
       }
       actions={
         <>
-          {apiConnected && onAsrToggle && isWorkSessionActive && (
-            <AppButton
-              onClick={onAsrToggle}
-              disabled={asrState !== 'idle'}
-              variant="success"
-              size="large"
-              icon="🎤"
-              title="启动ASR"
-              ariaLabel="启动ASR"
-            >
-              ASR
-            </AppButton>
+          {/* ASR控制按钮：根据状态切换 */}
+          {apiConnected && isWorkSessionActive && (
+            <>
+              {asrState === 'idle' && onAsrStart && (
+                <AppButton
+                  onClick={onAsrStart}
+                  variant="success"
+                  size="large"
+                  icon="🎤"
+                  title="启动语音识别"
+                  ariaLabel="启动ASR"
+                >
+                  启动ASR
+                </AppButton>
+              )}
+
+              {asrState === 'recording' && onAsrStop && (
+                <AppButton
+                  onClick={onAsrStop}
+                  variant="danger"
+                  size="large"
+                  icon="⏹"
+                  title="停止语音识别"
+                  ariaLabel="停止ASR"
+                >
+                  停止ASR
+                </AppButton>
+              )}
+
+              {asrState === 'stopping' && (
+                <AppButton
+                  disabled
+                  variant="warning"
+                  size="large"
+                  icon="⏳"
+                  title="正在停止..."
+                  ariaLabel="正在停止"
+                >
+                  停止中...
+                </AppButton>
+              )}
+            </>
           )}
 
-          {apiConnected && onPauseToggle && isWorkSessionActive && (
-            <AppButton
-              onClick={onPauseToggle}
-              disabled={asrState !== 'recording'}
-              variant="warning"
-              size="medium"
-              icon="⏸"
-              title="停止ASR"
-              ariaLabel="停止ASR"
-            >
-              PAUSE
-            </AppButton>
-          )}
-
+          {/* 保存和工具按钮 */}
           {isWorkSessionActive && (
             <>
               <AppButton
@@ -205,20 +225,21 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
                 title="保存到历史记录"
                 ariaLabel="保存文本"
               >
-                SAVE
+                保存
               </AppButton>
 
               <ButtonGroup>
-                {onClearText && text && (
+                {onCreateNewNote && (
                   <AppButton
-                    onClick={onClearText}
+                    onClick={onCreateNewNote}
+                    disabled={asrState !== 'idle'}
                     variant="ghost"
                     size="medium"
-                    icon="🗑"
-                    title="清空当前内容"
-                    ariaLabel="清空内容"
+                    icon="📝"
+                    title={text && text.trim() ? "保存当前笔记并创建新笔记" : "创建新笔记"}
+                    ariaLabel="新笔记"
                   >
-                    清空
+                    新笔记
                   </AppButton>
                 )}
                 <AppButton
@@ -250,10 +271,10 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
           
           <BlockEditor
             initialContent={text}
+            initialBlocks={initialBlocks}
             onContentChange={handleTextChange}
             onNoteInfoChange={handleNoteInfoChange}
             isRecording={asrState === 'recording'}
-            isPaused={asrState === 'paused'}
             ref={blockEditorRef}
           />
         </div>

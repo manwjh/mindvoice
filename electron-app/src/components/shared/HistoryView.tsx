@@ -120,9 +120,20 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   if (loading) {
     return (
       <div className="history-view">
-        <div className="history-loading">
-          <div className="loading-spinner"></div>
-          <div>加载中...</div>
+        <div className="history-container">
+          <div className="history-header">
+            <div className="history-logo">
+              <span className="history-logo-icon">📚</span>
+            </div>
+            <h1 className="history-title-text">历史记录</h1>
+            <p className="history-subtitle">查看和管理您的语音记录</p>
+          </div>
+          <div className="history-content">
+            <div className="history-loading">
+              <div className="loading-spinner"></div>
+              <div>加载中...</div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -131,10 +142,21 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   if (records.length === 0 && total === 0) {
     return (
       <div className="history-view">
-        <div className="history-empty">
-          <div className="empty-icon">📚</div>
-          <div className="empty-title">暂无历史记录</div>
-          <div className="empty-description">开始录音后，记录将自动保存</div>
+        <div className="history-container">
+          <div className="history-header">
+            <div className="history-logo">
+              <span className="history-logo-icon">📚</span>
+            </div>
+            <h1 className="history-title-text">历史记录</h1>
+            <p className="history-subtitle">查看和管理您的语音记录</p>
+          </div>
+          <div className="history-content">
+            <div className="history-empty">
+              <div className="empty-icon">📝</div>
+              <div className="empty-title">暂无历史记录</div>
+              <div className="empty-description">开始录音后，记录将自动保存</div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -142,49 +164,66 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
   return (
     <div className="history-view">
-      <div className="history-header">
-        <div className="history-header-left">
-          <h2 className="history-title">历史记录</h2>
-          <div className="history-count">{total} 条记录</div>
+      <div className="history-container">
+        <div className="history-header">
+          <div className="history-logo">
+            <span className="history-logo-icon">📚</span>
+          </div>
+          <h1 className="history-title-text">历史记录</h1>
+          <p className="history-subtitle">查看和管理您的语音记录</p>
         </div>
-      </div>
 
-      {/* 应用筛选器 */}
-      <div className="history-filters">
-        {APP_FILTERS.map((filter) => (
-          <button
-            key={filter.value}
-            className={`filter-btn ${currentFilter === filter.value ? 'filter-btn-active' : ''}`}
-            onClick={() => handleFilterChange(filter.value)}
-          >
-            <span className="filter-icon">{filter.icon}</span>
-            <span className="filter-label">{filter.label}</span>
-          </button>
-        ))}
-      </div>
-      
-      <div className="history-toolbar">
-        <label className="history-checkbox-label">
-          <input
-            type="checkbox"
-            checked={isAllSelected}
-            onChange={(e) => handleSelectAll(e.target.checked)}
-            className="history-checkbox"
-          />
-          <span>全选</span>
-        </label>
-        {hasSelected && (
-          <button
-            className="history-btn history-btn-delete-batch"
-            onClick={handleDeleteSelected}
-            title={`删除选中的 ${selectedIds.size} 条记录`}
-          >
-            删除选中 ({selectedIds.size})
-          </button>
-        )}
-      </div>
+        <div className="history-content">
+          <div className="history-stats">
+            <h2 className="section-title">记录统计</h2>
+            <div className="stats-info">
+              共 {total} 条记录
+            </div>
+          </div>
 
-      <div className="history-list">
+          {/* 应用筛选器 */}
+          <div className="history-section">
+            <h2 className="section-title">筛选器</h2>
+            <div className="history-filters">
+              {APP_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  className={`filter-btn ${currentFilter === filter.value ? 'filter-btn-active' : ''}`}
+                  onClick={() => handleFilterChange(filter.value)}
+                >
+                  <span className="filter-icon">{filter.icon}</span>
+                  <span className="filter-label">{filter.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="history-section">
+            <div className="history-section-header">
+              <h2 className="section-title">记录列表</h2>
+              <div className="history-toolbar">
+                <label className="history-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="history-checkbox"
+                  />
+                  <span>全选</span>
+                </label>
+                {hasSelected && (
+                  <button
+                    className="history-btn history-btn-delete-batch"
+                    onClick={handleDeleteSelected}
+                    title={`删除选中的 ${selectedIds.size} 条记录`}
+                  >
+                    删除选中 ({selectedIds.size})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="history-list">
         {records.map((record) => (
           <div key={record.id} className={`history-item ${selectedIds.has(record.id) ? 'history-item-selected' : ''}`}>
             <div className="history-item-checkbox">
@@ -229,29 +268,32 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             </div>
           </div>
         ))}
-      </div>
+            </div>
 
-      {totalPages > 1 && (
-        <div className="history-pagination">
-          <button
-            className="history-page-btn"
-            onClick={() => onPageChange(currentPage - 1, currentFilter)}
-            disabled={currentPage === 1}
-          >
-            上一页
-          </button>
-          <div className="history-page-info">
-            第 {currentPage} / {totalPages} 页
+            {totalPages > 1 && (
+              <div className="history-pagination">
+                <button
+                  className="history-page-btn"
+                  onClick={() => onPageChange(currentPage - 1, currentFilter)}
+                  disabled={currentPage === 1}
+                >
+                  上一页
+                </button>
+                <div className="history-page-info">
+                  第 {currentPage} / {totalPages} 页
+                </div>
+                <button
+                  className="history-page-btn"
+                  onClick={() => onPageChange(currentPage + 1, currentFilter)}
+                  disabled={currentPage === totalPages}
+                >
+                  下一页
+                </button>
+              </div>
+            )}
           </div>
-          <button
-            className="history-page-btn"
-            onClick={() => onPageChange(currentPage + 1, currentFilter)}
-            disabled={currentPage === totalPages}
-          >
-            下一页
-          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };

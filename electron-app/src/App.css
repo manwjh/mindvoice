@@ -39,28 +39,3 @@
   content: '⚠️';
   font-size: 16px;
 }
-
-/* 设置视图 */
-.settings-view {
-  flex: 1;
-  overflow-y: auto;
-  background: var(--color-bg-primary);
-  padding: 64px;
-  max-width: 1000px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.settings-content h2 {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: 24px;
-  letter-spacing: -0.5px;
-}
-
-.settings-content p {
-  font-size: 16px;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-}

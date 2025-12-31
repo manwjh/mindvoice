@@ -13,7 +13,7 @@ import './App.css';
 const API_BASE_URL = 'http://127.0.0.1:8765';
 const WS_URL = 'ws://127.0.0.1:8765/ws';
 
-type RecordingState = 'idle' | 'recording' | 'paused' | 'stopping';
+type RecordingState = 'idle' | 'recording' | 'stopping';
 
 interface Record {
   id: string;
@@ -41,9 +41,18 @@ function App() {
   const [pendingView, setPendingView] = useState<AppView | null>(null);
   const [isWorkSessionActive, setIsWorkSessionActive] = useState(false);
   
+  // ⭐ 新增：用于恢复完整的 blocks 数据
+  const [initialBlocks, setInitialBlocks] = useState<any[] | undefined>(undefined);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const blockEditorRef = useRef<{ appendAsrText: (text: string, isDefiniteUtterance?: boolean) => void } | null>(null);
+  const blockEditorRef = useRef<{ 
+    appendAsrText: (text: string, isDefiniteUtterance?: boolean, timeInfo?: any) => void;
+    setNoteInfoEndTime: () => void;
+    getNoteInfo: () => any;
+    getBlocks: () => any[];
+    setBlocks: (blocks: any[]) => void;
+  } | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 工作状态检查
@@ -201,6 +210,11 @@ function App() {
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         if (draft.timestamp > oneDayAgo && draft.text) {
           setText(draft.text);
+          // 恢复草稿时自动启动工作会话
+          const appType = draft.app || 'voice-note';
+          if (appType === 'voice-note') {
+            startWorkSession('voice-note');
+          }
           setToast({ message: '已恢复上次未保存的草稿', type: 'info' });
         } else {
           // 清除过期草稿
@@ -276,10 +290,14 @@ function App() {
               );
               break;
             case 'text_final':
-              // 确定的结果（完整utterance）
+              // 确定的结果（完整utterance）- 包含时间信息
               blockEditorRef.current?.appendAsrText(
                 data.text || '',
-                true
+                true,
+                {
+                  startTime: data.start_time,
+                  endTime: data.end_time
+                }
               );
               break;
             case 'state_change':
@@ -366,32 +384,61 @@ function App() {
   const startAsr = () => callAsrApi('/api/recording/start');
   const stopAsr = async () => {
     if (!apiConnected) return;
+    
+    // 防止重复调用：如果已经在停止中，直接返回
+    if (asrState === 'stopping') {
+      console.log('[App] ASR已在停止中，忽略重复调用');
+      return;
+    }
+    
+    // 立即更新状态为stopping，防止重复点击
+    setAsrState('stopping');
+    
+    // 设置超时保护：如果10秒后状态还是stopping，强制重置为idle
+    const timeoutId = setTimeout(() => {
+      console.warn('[App] ASR停止超时(10秒)，强制重置状态为idle');
+      setAsrState('idle');
+      setError('ASR停止超时，已强制重置状态。如果问题持续，请重启应用。');
+    }, 10000);
+    
     try {
       const response = await fetch(`${API_BASE_URL}/api/recording/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_edited_text: null }),
       });
+      
+      // 清除超时定时器
+      clearTimeout(timeoutId);
+      
       const data = await response.json();
       if (data.success) {
         setToast({ message: 'ASR已停止', type: 'info' });
       } else {
         setError(data.message);
+        // 如果停止失败，重置状态为idle
+        setAsrState('idle');
       }
     } catch (e) {
+      // 清除超时定时器
+      clearTimeout(timeoutId);
+      
       setError(`停止ASR失败: ${e}`);
+      // 发生错误时，强制重置状态为idle
+      setAsrState('idle');
     }
   };
 
-  // ASR按钮：仅在idle时可用，启动ASR
-  const handleAsrToggle = async () => {
+  // 启动ASR
+  const handleAsrStart = async () => {
     if (asrState === 'idle') {
       await startAsr();
     }
   };
 
-  // PAUSE按钮：仅在recording时可用，停止ASR（执行停止操作）
-  const handlePauseToggle = async () => {
+  // 停止ASR
+  const handleAsrStop = async () => {
+    // 只有在recording状态时才能停止（不需要checking stopping状态）
     if (asrState === 'recording') {
       await stopAsr();
     }
@@ -437,22 +484,28 @@ function App() {
         contentToSave = infoHeader + contentToSave;
       }
       
+      // ⭐ 新增：获取完整的 blocks 数据（包含时间信息和类型）
+      const blocksData = blockEditorRef.current?.getBlocks?.() || null;
+      
       const response = await fetch(`${API_BASE_URL}/api/text/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           text: contentToSave,
-          app_type: appType
+          app_type: appType,
+          blocks: blocksData  // ⭐ 传递 blocks 数据
         }),
       });
       const data = await response.json();
       if (data.success) {
-        setToast({ message: '已保存到历史记录', type: 'success' });
+        setToast({ message: '已保存到历史记录，可继续记录新内容', type: 'success' });
         // 保存成功后清除草稿
         localStorage.removeItem('voiceNoteDraft');
-        // 结束工作会话
-        endWorkSession();
-        setText('');  // 清空内容
+        // 清空内容，但保持工作会话活跃，允许用户继续记录
+        setText('');
+        // ⭐ 清空 blocks 数据
+        setInitialBlocks(undefined);
+        // 注意：不调用 endWorkSession()，让用户可以继续使用
       } else {
         setError(data.message || '保存失败');
       }
@@ -474,12 +527,75 @@ function App() {
     }
   };
 
-  const clearText = () => {
-    if (text && window.confirm('确定要清空当前内容吗？此操作不可撤销。')) {
+  const createNewNote = async () => {
+    // 如果当前有内容，先保存
+    if (text && text.trim()) {
+      if (!apiConnected) {
+        setError('API未连接');
+        return;
+      }
+      
+      if (asrState !== 'idle') {
+        setToast({ message: '请先停止ASR后再创建新笔记', type: 'info' });
+        return;
+      }
+      
+      try {
+        // 获取笔记信息
+        const noteInfo = blockEditorRef.current?.getNoteInfo?.();
+        
+        // 先设置结束时间
+        if (blockEditorRef.current?.setNoteInfoEndTime) {
+          blockEditorRef.current.setNoteInfoEndTime();
+        }
+        
+        // 构建保存内容
+        let contentToSave = text.trim();
+        if (noteInfo) {
+          const infoHeader = [
+            `📋 笔记信息`,
+            noteInfo.title ? `📌 标题: ${noteInfo.title}` : '',
+            noteInfo.type ? `🏷️ 类型: ${noteInfo.type}` : '',
+            noteInfo.relatedPeople ? `👥 相关人员: ${noteInfo.relatedPeople}` : '',
+            noteInfo.location ? `📍 地点: ${noteInfo.location}` : '',
+            `⏰ 开始时间: ${noteInfo.startTime}`,
+            noteInfo.endTime ? `⏱️ 结束时间: ${noteInfo.endTime}` : '',
+            '',
+            '---',
+            '',
+          ].filter(line => line).join('\n');
+          
+          contentToSave = infoHeader + contentToSave;
+        }
+        
+        // 保存当前笔记
+        const response = await fetch(`${API_BASE_URL}/api/text/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            text: contentToSave,
+            app_type: 'voice-note'
+          }),
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          // 清空内容并清除草稿
+          setText('');
+          localStorage.removeItem('voiceNoteDraft');
+          setToast({ message: '当前笔记已保存，可以开始新笔记了', type: 'success' });
+          // 保持工作会话活跃，用户可以继续记录
+        } else {
+          setError(data.message || '保存失败');
+        }
+      } catch (e) {
+        setToast({ message: '保存失败，请重试', type: 'error' });
+      }
+    } else {
+      // 如果没有内容，直接清空
       setText('');
-      localStorage.removeItem('voiceNoteDraft');  // 清除草稿
-      endWorkSession();  // 清空时结束工作会话
-      setToast({ message: '内容已清空', type: 'info' });
+      localStorage.removeItem('voiceNoteDraft');
+      setToast({ message: '准备好记录新笔记了', type: 'info' });
     }
   };
 
@@ -537,6 +653,15 @@ function App() {
       const data = await response.json();
       if (data.text) {
         setText(data.text);
+        
+        // ⭐ 新增：恢复 blocks 数据（如果存在）
+        if (data.metadata?.blocks && Array.isArray(data.metadata.blocks)) {
+          setInitialBlocks(data.metadata.blocks);
+        } else {
+          // 如果没有 blocks 数据，清空以触发从纯文本创建
+          setInitialBlocks(undefined);
+        }
+        
         setActiveView('voice-note');
       }
     } catch (e) {
@@ -566,16 +691,17 @@ function App() {
             text={text}
             onTextChange={setText}
             asrState={asrState}
-            onAsrToggle={handleAsrToggle}
-            onPauseToggle={handlePauseToggle}
+            onAsrStart={handleAsrStart}
+            onAsrStop={handleAsrStop}
             onSaveText={saveText}
             onCopyText={copyText}
-            onClearText={clearText}
+            onCreateNewNote={createNewNote}
             apiConnected={apiConnected}
             blockEditorRef={blockEditorRef}
             isWorkSessionActive={isWorkSessionActive}
             onStartWork={() => startWorkSession('voice-note')}
             onEndWork={endWorkSession}
+            initialBlocks={initialBlocks}
           />
         )}
 

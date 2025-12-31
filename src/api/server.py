@@ -244,13 +244,20 @@ def setup_voice_service():
         
         # 设置回调 - 直接通过WebSocket广播
         # 根据 is_definite 决定消息类型：中间结果用 text_update，确定结果用 text_final
+        # 注：text 已在后端累加处理，前端直接显示即可
         # 🔧 优化：使用broadcast函数（内部会调用broadcast_safe保证顺序）
-        voice_service.set_on_text_callback(
-            lambda text, is_definite: broadcast({
+        def on_text_callback(text: str, is_definite: bool, time_info: dict):
+            message = {
                 "type": "text_final" if is_definite else "text_update",
                 "text": text
-            })
-        )
+            }
+            # 仅在确定的utterance时添加时间信息
+            if is_definite and time_info:
+                message["start_time"] = time_info.get('start_time', 0)
+                message["end_time"] = time_info.get('end_time', 0)
+            broadcast(message)
+        
+        voice_service.set_on_text_callback(on_text_callback)
         voice_service.set_on_state_change_callback(
             lambda state: broadcast({"type": "state_change", "state": state.value})
         )
@@ -444,6 +451,7 @@ class SaveTextRequest(BaseModel):
     """直接保存文本请求"""
     text: str
     app_type: str = 'voice-note'  # 应用类型，默认为voice-note
+    blocks: Optional[list] = None  # ⭐ 新增：完整的 blocks 数据（包含时间信息和类型）
 
 
 class SaveTextResponse(BaseModel):
@@ -472,11 +480,12 @@ async def save_text_directly(request: SaveTextRequest):
             'provider': 'manual',  # 标记为手动输入
             'input_method': 'keyboard',  # 输入方式：键盘
             'app_type': request.app_type,  # 应用类型
-            'created_at': voice_service._get_timestamp()
+            'created_at': voice_service._get_timestamp(),
+            'blocks': request.blocks  # ⭐ 新增：保存完整的 blocks 数据
         }
         
         record_id = voice_service.storage_provider.save_record(request.text, metadata)
-        logger.info(f"[API] 已直接保存文本记录: {record_id}")
+        logger.info(f"[API] 已直接保存文本记录: {record_id}, blocks数据: {'有' if request.blocks else '无'}")
         
         return SaveTextResponse(
             success=True,
@@ -947,7 +956,26 @@ async def simple_chat(request: SimpleChatRequest):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket端点 - 用于实时文本和状态更新"""
+    """WebSocket端点 - 用于实时文本和状态更新
+    
+    消息类型：
+    1. initial_state - 初始状态
+       { "type": "initial_state", "state": "idle|recording|paused|stopping", "text"?: "..." }
+    
+    2. text_update - 中间识别结果（实时更新）
+       { "type": "text_update", "text": "..." }
+    
+    3. text_final - 确定的完整utterance（包含时间信息，文本已在后端累加处理）
+       { "type": "text_final", "text": "...", "start_time": 1234, "end_time": 5678 }
+       注：start_time 和 end_time 单位为毫秒，相对于音频流开始时间
+           text 字段已包含后端累加后的完整文本（间隔<800ms的句子会自动累加）
+    
+    4. state_change - 状态变更
+       { "type": "state_change", "state": "idle|recording|paused|stopping" }
+    
+    5. error - 错误消息
+       { "type": "error", "error_type": "...", "message": "..." }
+    """
     await websocket.accept()
     active_connections.add(websocket)
     logger.info(f"[API] WebSocket连接已建立，当前连接数: {len(active_connections)}")

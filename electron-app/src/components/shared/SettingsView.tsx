@@ -189,44 +189,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
 
   return (
     <div className="settings-view">
-      <div className="settings-content">
-        <h2>设置</h2>
-        
-        {message && (
-          <div className={`settings-message settings-message-${message.type}`}>
-            {message.text}
+      <div className="settings-container">
+        <div className="settings-header">
+          <div className="settings-logo">
+            <span className="settings-logo-icon">⚙️</span>
           </div>
-        )}
+          <h1 className="settings-title">设置</h1>
+          <p className="settings-subtitle">配置应用参数</p>
+        </div>
 
-        <div className="settings-section">
-          <div className="settings-section-header">
-            <div>
-              <h3 className="settings-section-title">音频源</h3>
-              <p className="settings-section-description">
-                选择用于语音输入的音频设备
-              </p>
+        <div className="settings-content">
+          {message && (
+            <div className={`settings-message settings-message-${message.type}`}>
+              {message.text}
             </div>
-            <button
-              className="settings-btn-icon settings-btn-refresh-icon"
-              onClick={loadDevices}
-              disabled={loading || !apiConnected}
-              title={loading ? '加载中...' : '刷新设备列表'}
-            >
-              <svg 
-                width="20" 
-                height="20" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-                className={loading ? 'rotating' : ''}
+          )}
+
+          <div className="settings-section">
+            <div className="settings-section-header">
+              <div>
+                <h2 className="section-title">音频源</h2>
+                <p className="settings-section-description">
+                  选择用于语音输入的音频设备
+                </p>
+              </div>
+              <button
+                className="settings-btn-icon settings-btn-refresh-icon"
+                onClick={loadDevices}
+                disabled={loading || !apiConnected}
+                title={loading ? '加载中...' : '刷新设备列表'}
               >
-                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-              </svg>
-            </button>
-          </div>
+                <svg 
+                  width="20" 
+                  height="20" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                  className={loading ? 'rotating' : ''}
+                >
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+              </button>
+            </div>
           
           {loading ? (
             <div className="settings-loading">
@@ -290,10 +297,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
               ))}
             </div>
           )}
-        </div>
+          </div>
 
-        <div className="settings-section">
-          <h3 className="settings-section-title">ASR模型配置</h3>
+          <div className="settings-section">
+          <h2 className="section-title">ASR模型配置</h2>
           <p className="settings-section-description">
             配置语音识别模型的参数。可以选择使用厂商默认配置或自定义配置。
           </p>
@@ -461,6 +468,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
     </div>

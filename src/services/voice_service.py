@@ -27,7 +27,7 @@ class VoiceService:
         self.asr_provider: Optional[VolcanoASRProvider] = None
         self.storage_provider: Optional[SQLiteStorageProvider] = None
         
-        self._on_text_callback: Optional[Callable[[str, bool], None]] = None
+        self._on_text_callback: Optional[Callable[[str, bool, dict], None]] = None
         self._on_state_change_callback: Optional[Callable[[RecordingState], None]] = None
         self._on_error_callback: Optional[Callable[[str, str], None]] = None
         
@@ -113,13 +113,18 @@ class VoiceService:
         logger.info("[语音服务] 设置录音器")
         self.recorder = recorder
     
-    def set_on_text_callback(self, callback: Callable[[str, bool], None]):
+    def set_on_text_callback(self, callback: Callable[[str, bool, dict], None]):
         """设置文本回调函数
         
         Args:
-            callback: 回调函数 (text: str, is_definite_utterance: bool)
+            callback: 回调函数 (text: str, is_definite_utterance: bool, time_info: dict)
+                      text: 识别的文本（已在后端累加处理）
                       is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
                                              表示一个完整的、确定的语音识别单元已完成
+                      time_info: 时间信息字典，包含:
+                                - start_time: 开始时间（毫秒）
+                                - end_time: 结束时间（毫秒）
+                                注意：仅在 is_definite_utterance=True 时有值
         """
         self._on_text_callback = callback
     
@@ -231,23 +236,29 @@ class VoiceService:
                 if self._on_error_callback:
                     self._on_error_callback("音频传输失败", error_msg)
     
-    def _on_asr_text_received(self, text: str, is_definite_utterance: bool):
+    def _on_asr_text_received(self, text: str, is_definite_utterance: bool, time_info: dict):
         """ASR 文本接收回调
         
         Args:
-            text: 识别的文本内容
+            text: 识别的文本内容（已在后端累加处理）
             is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
                                    表示一个完整的、确定的语音识别单元已完成
+            time_info: 时间信息字典，包含 start_time 和 end_time（毫秒）
         """
-        logger.info(f"[语音服务] 收到ASR文本: '{text}', is_definite_utterance={is_definite_utterance}")
+        # 只在确定的utterance时输出日志（避免日志过多）
+        if is_definite_utterance:
+            time_info_str = ""
+            if time_info:
+                time_info_str = f", start_time={time_info.get('start_time', 0)}ms, end_time={time_info.get('end_time', 0)}ms"
+            logger.info(f"[语音服务] 收到确定utterance: '{text}'{time_info_str}")
         self._current_text = text
         
         # 注意：不再自动保存会话记录，只有用户明确点击SAVE按钮时才会保存到历史记录
         # 文本会通过回调传递给前端，前端会更新工作区域显示
         
-        # 调用回调函数，传递文本和确定utterance标识
+        # 调用回调函数，传递文本、确定utterance标识和时间信息
         if self._on_text_callback:
-            self._on_text_callback(text, is_definite_utterance)
+            self._on_text_callback(text, is_definite_utterance, time_info)
     
     def pause_recording(self) -> bool:
         """暂停录音"""
@@ -286,94 +297,95 @@ class VoiceService:
             logger.error("[语音服务] 录音器未设置，无法停止")
             return None
         
-        self._notify_state_change(RecordingState.STOPPING)
-        logger.info("[语音服务] 状态: STOPPING")
-        
-        # 停止录音
-        logger.info("[语音服务] 停止录音器...")
-        self.recorder.stop_recording()
-        
-        # 停止流式识别并获取最终结果
-        # 清除音频回调（无论流式识别是否激活）
-        self.recorder.set_on_audio_chunk_callback(None)
-        logger.debug("[语音服务] 已清除音频数据块回调")
-        
-        final_text = None
-        # 如果ASR提供商存在，尝试停止流式识别并关闭WebSocket连接
-        if self.asr_provider and self._loop:
-            logger.info("[语音服务] 停止流式识别并关闭ASR WebSocket连接...")
-            try:
-                if not self._loop.is_closed():
-                    logger.info("[语音服务] 等待ASR最终结果并关闭连接...")
-                    if self._loop.is_running():
-                        future = asyncio.run_coroutine_threadsafe(
-                            self.asr_provider.stop_streaming_recognition(),
-                            self._loop
-                        )
-                        try:
-                            final_text = future.result(timeout=6.0)  # 增加超时时间到6秒
-                            logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
-                        except Exception as e:
-                            error_msg = f"等待ASR最终结果超时或失败: {str(e)}"
-                            logger.warning(f"[语音服务] {error_msg}")
-                            # 即使超时，也等待一小段时间看是否有回调到达
-                            import time
-                            start_time = time.time()
-                            while time.time() - start_time < 2.0:  # 最多等待2秒
-                                if self._current_text and self._current_text != final_text:
-                                    final_text = self._current_text
-                                    logger.info(f"[语音服务] 通过回调获取到最终结果: '{final_text}'")
-                                    break
-                                time.sleep(0.1)
-                            if not final_text:
-                                logger.warning("[语音服务] 未能获取ASR最终结果，使用当前文本")
+        try:
+            self._notify_state_change(RecordingState.STOPPING)
+            logger.info("[语音服务] 状态: STOPPING")
+            
+            # 停止录音
+            logger.info("[语音服务] 停止录音器...")
+            self.recorder.stop_recording()
+            
+            # 停止流式识别并获取最终结果
+            # 清除音频回调（无论流式识别是否激活）
+            self.recorder.set_on_audio_chunk_callback(None)
+            logger.debug("[语音服务] 已清除音频数据块回调")
+            
+            final_text = None
+            # 如果ASR提供商存在，尝试停止流式识别并关闭WebSocket连接
+            if self.asr_provider and self._loop:
+                logger.info("[语音服务] 停止流式识别并关闭ASR WebSocket连接...")
+                try:
+                    if not self._loop.is_closed():
+                        logger.info("[语音服务] 等待ASR最终结果并关闭连接...")
+                        if self._loop.is_running():
+                            future = asyncio.run_coroutine_threadsafe(
+                                self.asr_provider.stop_streaming_recognition(),
+                                self._loop
+                            )
+                            try:
+                                final_text = future.result(timeout=3.0)  # 缩短超时时间到3秒
+                                logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
+                            except Exception as e:
+                                error_msg = f"等待ASR最终结果超时或失败: {str(e)}"
+                                logger.warning(f"[语音服务] {error_msg}")
+                                # 超时后直接使用当前文本，不再额外等待
                                 final_text = self._current_text
-                            if self._on_error_callback and not final_text:
-                                self._on_error_callback("ASR停止失败", error_msg)
+                                if final_text:
+                                    logger.info(f"[语音服务] 使用当前文本作为最终结果: '{final_text}'")
+                                else:
+                                    logger.warning("[语音服务] 当前文本为空，返回空结果")
+                                # 不需要报错，这是正常情况（可能用户没有说话）
+                        else:
+                            final_text = self._loop.run_until_complete(
+                                self.asr_provider.stop_streaming_recognition()
+                            )
+                            logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
                     else:
-                        final_text = self._loop.run_until_complete(
-                            self.asr_provider.stop_streaming_recognition()
-                        )
-                        logger.info(f"[语音服务] ASR最终结果: '{final_text}'")
-                else:
-                    logger.warning("[语音服务] 事件循环已关闭，无法正常停止ASR")
-                    # 即使事件循环已关闭，也尝试直接调用disconnect（如果可能）
-                    if hasattr(self.asr_provider, '_disconnect'):
-                        try:
-                            # 创建一个新的事件循环来执行断开连接
-                            new_loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(new_loop)
-                            new_loop.run_until_complete(self.asr_provider._disconnect())
-                            new_loop.close()
-                            logger.info("[语音服务] 已通过新事件循环关闭ASR连接")
-                        except Exception as e:
-                            logger.error(f"[语音服务] 通过新事件循环关闭连接失败: {e}")
-                
-                self._streaming_active = False
-                logger.info("[语音服务] 流式识别已停止，WebSocket连接已关闭")
-            except Exception as e:
-                error_msg = f"停止流式识别失败: {str(e)}"
-                logger.error(f"[语音服务] {error_msg}", exc_info=True)
-                if self._on_error_callback:
-                    self._on_error_callback("ASR停止失败", error_msg)
-                self._streaming_active = False
-        else:
-            if not self.asr_provider:
-                logger.info("[语音服务] ASR提供商未初始化，跳过停止ASR")
-            elif not self._loop:
-                logger.info("[语音服务] 事件循环未设置，跳过停止ASR")
+                        logger.warning("[语音服务] 事件循环已关闭，无法正常停止ASR")
+                        # 即使事件循环已关闭，也尝试直接调用disconnect（如果可能）
+                        if hasattr(self.asr_provider, '_disconnect'):
+                            try:
+                                # 创建一个新的事件循环来执行断开连接
+                                new_loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(new_loop)
+                                new_loop.run_until_complete(self.asr_provider._disconnect())
+                                new_loop.close()
+                                logger.info("[语音服务] 已通过新事件循环关闭ASR连接")
+                            except Exception as e:
+                                logger.error(f"[语音服务] 通过新事件循环关闭连接失败: {e}")
+                    
+                    self._streaming_active = False
+                    logger.info("[语音服务] 流式识别已停止，WebSocket连接已关闭")
+                except Exception as e:
+                    error_msg = f"停止流式识别失败: {str(e)}"
+                    logger.error(f"[语音服务] {error_msg}", exc_info=True)
+                    if self._on_error_callback:
+                        self._on_error_callback("ASR停止失败", error_msg)
+                    self._streaming_active = False
             else:
-                logger.info("[语音服务] 流式识别未激活，但已清除音频回调")
-        
-        # 注意：不再自动保存记录，只有用户明确点击SAVE按钮时才会保存到历史记录
-        # 清空会话ID，让保存操作独立处理
-        self._current_session_id = None
-        if final_text:
-            self._current_text = final_text
-        
-        self._notify_state_change(RecordingState.IDLE)
-        logger.info("[语音服务] 录音已停止，状态: IDLE")
-        return final_text
+                if not self.asr_provider:
+                    logger.info("[语音服务] ASR提供商未初始化，跳过停止ASR")
+                elif not self._loop:
+                    logger.info("[语音服务] 事件循环未设置，跳过停止ASR")
+                else:
+                    logger.info("[语音服务] 流式识别未激活，但已清除音频回调")
+            
+            # 注意：不再自动保存记录，只有用户明确点击SAVE按钮时才会保存到历史记录
+            # 清空会话ID，让保存操作独立处理
+            self._current_session_id = None
+            if final_text:
+                self._current_text = final_text
+            
+            return final_text
+        except Exception as e:
+            logger.error(f"[语音服务] 停止录音过程发生异常: {e}", exc_info=True)
+            # 确保流式识别被标记为非激活状态
+            self._streaming_active = False
+            return None
+        finally:
+            # 无论如何都要确保状态被重置为IDLE
+            self._notify_state_change(RecordingState.IDLE)
+            logger.info("[语音服务] 录音已停止，状态: IDLE")
     
     def get_state(self) -> RecordingState:
         """获取当前状态"""

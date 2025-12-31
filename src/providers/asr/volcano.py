@@ -255,6 +255,12 @@ class VolcanoASRProvider(BaseASRProvider):
         self._receive_task: Optional[asyncio.Task] = None
         self._on_text_callback: Optional[Callable[[str, bool], None]] = None
         self._last_text = ""
+        
+        # 智能断句修正配置
+        self._enable_utterance_merge = True  # 是否启用utterance累加修正
+        self._merge_threshold_ms = 800  # 累加时间阈值（毫秒）
+        self._last_utterance_end_time = 0  # 上一个utterance的结束时间
+        self._accumulated_text = ""  # 累积的文本
     
     @property
     def name(self) -> str:
@@ -281,10 +287,15 @@ class VolcanoASRProvider(BaseASRProvider):
             logger.error("请检查 config.yml 中的 asr.app_key 或 asr.app_id 配置")
             return False
         
+        # 读取智能断句修正配置
+        self._enable_utterance_merge = config.get('enable_utterance_merge', True)
+        self._merge_threshold_ms = config.get('merge_threshold_ms', 800)
+        
         logger.info(f"[ASR] 初始化配置: base_url={self.base_url}")
         logger.info(f"[ASR] app_id={self.app_id if self.app_id else '(未设置)'}")
         logger.info(f"[ASR] app_key={'已设置 (' + str(len(self.app_key)) + ' 字符)' if self.app_key else '未设置'}")
         logger.info(f"[ASR] access_key={'已设置 (' + str(len(self.access_key)) + ' 字符)' if self.access_key else '未设置'}")
+        logger.info(f"[ASR] 智能断句修正: {'启用' if self._enable_utterance_merge else '禁用'} (阈值={self._merge_threshold_ms}ms)")
         
         return super().initialize(config)
     
@@ -426,17 +437,11 @@ class VolcanoASRProvider(BaseASRProvider):
         """接收 ASR 结果"""
         try:
             async for msg in self.conn:
-                logger.debug(f"[ASR] 收到消息类型: {msg.type}")
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     try:
                         response = ResponseParser.parse_response(msg.data)
                         
-                        logger.debug(f"[ASR] 响应解析: code={response.code}, "
-                                   f"is_last_package={response.is_last_package}")
-                        
                         if response.payload_msg:
-                            logger.debug(f"[ASR] ASR响应: {json.dumps(response.payload_msg, ensure_ascii=False, indent=2)}")
-                            
                             result = response.payload_msg.get('result', {})
                             if isinstance(result, dict):
                                 # 使用统一的处理方法，确保回调被正确调用
@@ -555,13 +560,18 @@ class VolcanoASRProvider(BaseASRProvider):
         """检查服务是否可用"""
         return self._initialized and bool(self.access_key and self.app_key)
     
-    def set_on_text_callback(self, callback: Optional[Callable[[str, bool], None]]):
+    def set_on_text_callback(self, callback: Optional[Callable[[str, bool, dict], None]]):
         """设置文本回调函数
         
         Args:
-            callback: 回调函数 (text: str, is_definite_utterance: bool)
+            callback: 回调函数 (text: str, is_definite_utterance: bool, time_info: dict)
+                      text: 识别的文本（已在后端累加处理）
                       is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
                                              表示一个完整的、确定的语音识别单元已完成
+                      time_info: 时间信息字典，包含:
+                                - start_time: 开始时间（毫秒）
+                                - end_time: 结束时间（毫秒）
+                                注意：仅在 is_definite_utterance=True 时有值
         """
         self._on_text_callback = callback
     
@@ -582,6 +592,9 @@ class VolcanoASRProvider(BaseASRProvider):
             self._stopping = False
             self.seq = 1
             self._recognition_event = asyncio.Event()
+            self._last_utterance_end_time = 0  # 重置utterance结束时间
+            self._accumulated_text = ""  # 重置累积文本
+            logger.info("[ASR] 已重置状态，开始新的识别会话")
             
             await self._send_full_request()
             await asyncio.sleep(0.2)
@@ -633,19 +646,15 @@ class VolcanoASRProvider(BaseASRProvider):
                 except Exception as e:
                     logger.warning(f"[ASR] 发送最后一个音频包失败: {e}")
             
-            # 等待最终结果（最多5秒，与voice_service的超时时间一致）
+            # 等待最终结果（缩短到2秒）
             if self._recognition_event:
                 try:
-                    await asyncio.wait_for(self._recognition_event.wait(), timeout=5.0)
+                    await asyncio.wait_for(self._recognition_event.wait(), timeout=2.0)
                     logger.debug("[ASR] 收到最终结果信号")
                 except asyncio.TimeoutError:
-                    logger.warning("[ASR] 等待最终结果超时，继续关闭连接")
+                    logger.warning("[ASR] 等待最终结果超时，强制关闭连接")
             
-            # 等待更长时间，确保服务器处理完成并收到所有结果
-            # 给接收任务更多时间来处理可能延迟到达的最终结果
-            await asyncio.sleep(1.0)
-            
-            # 再等待一小段时间，确保回调函数已处理最终结果
+            # 短暂等待，确保最后的响应被处理（0.5秒足够）
             await asyncio.sleep(0.5)
             
             # 取消接收任务
@@ -673,8 +682,8 @@ class VolcanoASRProvider(BaseASRProvider):
             await self._disconnect()
             logger.info("[ASR] WebSocket连接已关闭")
     
-    def _detect_definite_utterance(self, result: dict, text: str) -> bool:
-        """检测是否为确定的utterance
+    def _detect_definite_utterance(self, result: dict, text: str) -> tuple[bool, dict]:
+        """检测是否为确定的utterance并提取时间信息
         
         使用 utterances 中的 definite 字段来判断utterance是否确定。
         需要 show_utterances=True 才能获取 utterances 数据。
@@ -683,26 +692,31 @@ class VolcanoASRProvider(BaseASRProvider):
         如果没有 utterances 数据，返回 False（不允许使用标点符号判断）。
         
         Returns:
-            bool: True表示检测到确定的utterance，False表示未检测到
+            tuple[bool, dict]: (是否为确定utterance, 时间信息字典)
+                              时间信息包含: start_time, end_time (单位: 毫秒)
         """
         utterances = result.get('utterances', [])
         
         if not utterances:
             # 如果没有 utterances 数据，返回 False
             # 注意：不允许使用标点符号判断，必须依赖 ASR 服务返回的 definite 字段
-            return False
+            return False, {}
         
         # 检查是否有 definite=True 的 utterance
         for utterance in utterances:
             if isinstance(utterance, dict):
                 is_definite = utterance.get('definite', False)
                 if is_definite:
-                    utterance_text = utterance.get('text', '')
-                    logger.debug(f"[ASR] 检测到确定utterance: '{utterance_text[:50]}...' (definite=True)")
-                    return True
+                    # 提取时间信息（尝试多种可能的字段名）
+                    start_time = utterance.get('start_time', utterance.get('start_ms', utterance.get('begin_time', utterance.get('begin', 0))))
+                    end_time = utterance.get('end_time', utterance.get('end_ms', utterance.get('end', 0)))
+                    return True, {
+                        'start_time': start_time,
+                        'end_time': end_time
+                    }
         
         # 如果没有 definite utterance，返回 False
-        return False
+        return False, {}
     
     def _handle_recognition_result(self, result: dict, is_last_package: bool):
         """处理识别结果
@@ -715,21 +729,57 @@ class VolcanoASRProvider(BaseASRProvider):
         if not text:
             return
         
-        # 检测是否为确定的utterance（基于ASR服务的definite字段）
-        is_definite_utterance = self._detect_definite_utterance(result, text)
+        # 检测是否为确定的utterance（基于ASR服务的definite字段）并提取时间信息
+        is_definite_utterance, time_info = self._detect_definite_utterance(result, text)
         
         self._last_text = text
         
         # 更新结果文本（用于非流式识别的返回值）
         self._result_text = text
-        if is_definite_utterance or is_last_package:
-            logger.info(f"[ASR] 最终结果: '{text}'")
-        else:
-            logger.debug(f"[ASR] 中间结果: '{text}'")
         
-        # 调用回调函数（用于流式识别），直接传递原始文本
+        # 🎯 中间层：基于时间间隔判断并累加文本
+        if is_definite_utterance and time_info:
+            current_start = time_info.get('start_time', 0)
+            current_end = time_info.get('end_time', 0)
+            last_end = self._last_utterance_end_time
+            
+            # 计算时间间隔
+            time_gap = current_start - last_end
+            
+            # 判断是否应该累加（根据配置开关）
+            if self._enable_utterance_merge:
+                should_accumulate = (last_end > 0) and (time_gap < self._merge_threshold_ms)
+                
+                if should_accumulate:
+                    # 累加模式：追加到已有文本
+                    self._accumulated_text += text
+                    logger.info(f"[ASR] 累加utterance: '{text}' (间隔={time_gap}ms), 累积文本: '{self._accumulated_text}'")
+                    text_to_send = self._accumulated_text
+                else:
+                    # 新句子：重置累积文本
+                    self._accumulated_text = text
+                    if last_end > 0:
+                        logger.info(f"[ASR] 新utterance: '{text}' (间隔={time_gap}ms)")
+                    else:
+                        logger.info(f"[ASR] 首句utterance: '{text}'")
+                    text_to_send = text
+            else:
+                # 累加修正已禁用，直接输出原始文本
+                logger.info(f"[ASR] utterance: '{text}' (修正已禁用)")
+                text_to_send = text
+            
+            # 更新最后的结束时间
+            self._last_utterance_end_time = current_end
+        elif is_last_package:
+            logger.info(f"[ASR] 最终结果: '{text}'")
+            text_to_send = text
+        else:
+            # 中间结果
+            text_to_send = text
+        
+        # 调用回调函数（用于流式识别），传递累加后的文本
         if self._on_text_callback:
-            self._on_text_callback(text, is_definite_utterance)
+            self._on_text_callback(text_to_send, is_definite_utterance, time_info)
     
     def _handle_error_response(self, code: int):
         """处理错误响应"""
@@ -769,15 +819,11 @@ class VolcanoASRProvider(BaseASRProvider):
         """接收流式识别结果"""
         try:
             async for msg in self.conn:
-                logger.debug(f"[ASR] 收到消息类型: {msg.type}")
-                
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     try:
                         response = ResponseParser.parse_response(msg.data)
                         
                         if response.payload_msg:
-                            logger.debug(f"[ASR] ASR响应: {json.dumps(response.payload_msg, ensure_ascii=False, indent=2)}")
-                            
                             result = response.payload_msg.get('result', {})
                             if isinstance(result, dict):
                                 self._handle_recognition_result(result, response.is_last_package)

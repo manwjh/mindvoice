@@ -1,0 +1,85 @@
+.timeline-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  opacity: 0.5;
+  transition: all var(--transition-base);
+  width: fit-content;
+}
+
+.timeline-indicator:hover {
+  opacity: 0.8;
+  background: transparent;
+}
+
+.timeline-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9ca3af;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+
+.timeline-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.timeline-time {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.timeline-separator {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.timeline-duration {
+  color: #9ca3af;
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+/* 在 ASR 正在写入时隐藏时间轴 */
+.block-asr-writing-container .timeline-indicator {
+  display: none;
+}
+
+/* 时间轴的动画效果 */
+@keyframes timeline-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 0.5;
+    transform: translateY(0);
+  }
+}
+
+.timeline-indicator {
+  animation: timeline-appear 0.3s ease-out;
+}
+
+/* 深色模式适配 */
+@media (prefers-color-scheme: dark) {
+  .timeline-indicator {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  
+  .timeline-indicator:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
