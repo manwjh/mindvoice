@@ -207,12 +207,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
 
           <div className="settings-section">
             <div className="settings-section-header">
-              <div>
-                <h2 className="section-title">音频源</h2>
-                <p className="settings-section-description">
-                  选择用于语音输入的音频设备
-                </p>
-              </div>
+              <h2 className="section-title">音频源</h2>
               <button
                 className="settings-btn-icon settings-btn-refresh-icon"
                 onClick={loadDevices}
@@ -234,6 +229,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
                 </svg>
               </button>
             </div>
+            <p className="settings-section-description">
+              选择用于语音输入的音频设备
+            </p>
           
           {loading ? (
             <div className="settings-loading">

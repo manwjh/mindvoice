@@ -4,7 +4,7 @@ An AI-powered cross-platform desktop voice assistant that integrates Automatic S
 
 **Architecture**: Electron frontend + Python API backend (separated architecture for easy frontend framework replacement)
 
-**Version**: 1.0.0 | **Release Date**: 2025-12-31
+**Version**: 1.1.0 | **Release Date**: 2025-12-31
 
 ## ✨ Core Features
 

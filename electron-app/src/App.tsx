@@ -33,7 +33,7 @@ function App() {
   const [recordsTotal, setRecordsTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [appFilter, setAppFilter] = useState<'all' | 'voice-note' | 'voice-chat' | 'voice-zen'>('all');
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; duration?: number } | null>(null);
   
   // 工作状态管理
   const [activeWorkingApp, setActiveWorkingApp] = useState<AppView | null>(null);
@@ -41,7 +41,10 @@ function App() {
   const [pendingView, setPendingView] = useState<AppView | null>(null);
   const [isWorkSessionActive, setIsWorkSessionActive] = useState(false);
   
-  // ⭐ 新增：用于恢复完整的 blocks 数据
+  // VoiceChat 和 VoiceZen 的工作状态（通过回调更新）
+  const [voiceChatHasContent, setVoiceChatHasContent] = useState(false);
+  const [voiceZenHasContent, setVoiceZenHasContent] = useState(false);
+  
   const [initialBlocks, setInitialBlocks] = useState<any[] | undefined>(undefined);
   
   const wsRef = useRef<WebSocket | null>(null);
@@ -61,11 +64,9 @@ function App() {
       case 'voice-note':
         return asrState === 'recording' || text.trim().length > 0 || isWorkSessionActive;
       case 'voice-chat':
-        // TODO: 实现 VoiceChat 的工作状态检查
-        return false;
+        return voiceChatHasContent;
       case 'voice-zen':
-        // TODO: 实现 VoiceZen 的工作状态检查
-        return false;
+        return voiceZenHasContent;
       default:
         return false;
     }
@@ -137,7 +138,8 @@ function App() {
         await saveText();
       }
     }
-    // 其他应用的保存逻辑...
+    // VoiceChat 和 VoiceZen 的保存逻辑在各自组件内部处理
+    // 这里只需要重置工作状态
     
     endWorkSession();
     if (pendingView) {
@@ -152,8 +154,11 @@ function App() {
     if (activeWorkingApp === 'voice-note') {
       setText('');
       localStorage.removeItem('voiceNoteDraft');  // 清除草稿
+    } else if (activeWorkingApp === 'voice-chat') {
+      setVoiceChatHasContent(false);
+    } else if (activeWorkingApp === 'voice-zen') {
+      setVoiceZenHasContent(false);
     }
-    // 其他应用的清理逻辑...
     
     endWorkSession();
     if (pendingView) {
@@ -252,12 +257,11 @@ function App() {
       return;
     }
 
-    // 如果有旧连接，先关闭它
     if (wsRef.current) {
       try {
         wsRef.current.close();
       } catch (e) {
-        console.warn('关闭旧WebSocket连接失败:', e);
+        console.warn('关闭WebSocket连接失败:', e);
       }
       wsRef.current = null;
     }
@@ -371,7 +375,13 @@ function App() {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'POST' });
       const data = await response.json();
       if (!data.success) {
-        setError(data.message);
+        // 识别音频设备错误，使用 Toast 显示，并延长显示时间
+        const errorMsg = data.message || '操作失败';
+        if (errorMsg.includes('音频设备') || errorMsg.includes('PortAudio') || errorMsg.includes('单声道')) {
+          setToast({ message: errorMsg, type: 'error', duration: 6000 });
+        } else {
+          setError(errorMsg);
+        }
         return false;
       }
       return true;
@@ -484,7 +494,6 @@ function App() {
         contentToSave = infoHeader + contentToSave;
       }
       
-      // ⭐ 新增：获取完整的 blocks 数据（包含时间信息和类型）
       const blocksData = blockEditorRef.current?.getBlocks?.() || null;
       
       const response = await fetch(`${API_BASE_URL}/api/text/save`, {
@@ -493,17 +502,14 @@ function App() {
         body: JSON.stringify({ 
           text: contentToSave,
           app_type: appType,
-          blocks: blocksData  // ⭐ 传递 blocks 数据
+          blocks: blocksData
         }),
       });
       const data = await response.json();
       if (data.success) {
         setToast({ message: '已保存到历史记录，可继续记录新内容', type: 'success' });
-        // 保存成功后清除草稿
         localStorage.removeItem('voiceNoteDraft');
-        // 清空内容，但保持工作会话活跃，允许用户继续记录
         setText('');
-        // ⭐ 清空 blocks 数据
         setInitialBlocks(undefined);
         // 注意：不调用 endWorkSession()，让用户可以继续使用
       } else {
@@ -654,11 +660,9 @@ function App() {
       if (data.text) {
         setText(data.text);
         
-        // ⭐ 新增：恢复 blocks 数据（如果存在）
         if (data.metadata?.blocks && Array.isArray(data.metadata.blocks)) {
           setInitialBlocks(data.metadata.blocks);
         } else {
-          // 如果没有 blocks 数据，清空以触发从纯文本创建
           setInitialBlocks(undefined);
         }
         
@@ -710,11 +714,16 @@ function App() {
             apiConnected={apiConnected}
             onStartWork={() => startWorkSession('voice-chat')}
             onEndWork={endWorkSession}
+            onContentChange={setVoiceChatHasContent}
           />
         )}
 
         {activeView === 'voice-zen' && (
-          <VoiceZen />
+          <VoiceZen 
+            onStartWork={() => startWorkSession('voice-zen')}
+            onEndWork={endWorkSession}
+            onContentChange={setVoiceZenHasContent}
+          />
         )}
 
         {activeView === 'history' && (
@@ -740,6 +749,7 @@ function App() {
         <Toast
           message={toast.message}
           type={toast.type}
+          duration={toast.duration}
           onClose={() => setToast(null)}
         />
       )}

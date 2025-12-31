@@ -3,7 +3,7 @@ import './Toast.css';
 
 interface ToastProps {
   message: string;
-  type?: 'success' | 'error' | 'info';
+  type?: 'success' | 'error' | 'info' | 'warning';
   duration?: number;
   onClose: () => void;
 }

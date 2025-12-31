@@ -197,17 +197,14 @@ async def broadcast_safe(message: dict):
         logger.info(f"[API] 已移除 {len(disconnected)} 个失败的连接，当前连接数: {len(active_connections)}")
 
 def broadcast(message: dict):
-    """向所有WebSocket连接广播消息（同步接口，兼容旧代码）"""
+    """向所有WebSocket连接广播消息"""
     if not active_connections:
         return
     
-    # 🔧 修复：获取当前运行的事件循环
     try:
         loop = asyncio.get_running_loop()
-        # 在当前事件循环中创建任务
         asyncio.create_task(broadcast_safe(message))
     except RuntimeError:
-        # 如果没有运行的事件循环，记录警告
         logger.warning("[API] 无法广播消息：没有运行的事件循环")
 
 
@@ -242,16 +239,11 @@ def setup_voice_service():
         voice_service = VoiceService(config)
         voice_service.set_recorder(recorder)
         
-        # 设置回调 - 直接通过WebSocket广播
-        # 根据 is_definite 决定消息类型：中间结果用 text_update，确定结果用 text_final
-        # 注：text 已在后端累加处理，前端直接显示即可
-        # 🔧 优化：使用broadcast函数（内部会调用broadcast_safe保证顺序）
         def on_text_callback(text: str, is_definite: bool, time_info: dict):
             message = {
                 "type": "text_final" if is_definite else "text_update",
                 "text": text
             }
-            # 仅在确定的utterance时添加时间信息
             if is_definite and time_info:
                 message["start_time"] = time_info.get('start_time', 0)
                 message["end_time"] = time_info.get('end_time', 0)
@@ -377,7 +369,17 @@ async def start_recording():
             )
     except Exception as e:
         logger.error(f"启动录音失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # 识别音频设备错误，返回友好的错误消息
+        error_msg = str(e)
+        if "Invalid number of channels" in error_msg:
+            error_msg = "音频设备不支持单声道录音，请在设置中更换音频输入设备"
+        elif "PortAudioError" in error_msg or "Error opening" in error_msg:
+            error_msg = f"音频设备打开失败：{error_msg}。请检查音频设备设置或更换输入设备"
+        
+        return StartRecordingResponse(
+            success=False,
+            message=error_msg
+        )
 
 
 @app.post("/api/recording/pause", response_model=StartRecordingResponse)
@@ -433,8 +435,6 @@ async def stop_recording(request: StopRecordingRequest = StopRecordingRequest())
         raise HTTPException(status_code=503, detail="语音服务未初始化")
     
     try:
-        # 停止录音，获取ASR最终文本
-        # 注意：不自动保存记录，只有用户点击SAVE按钮时才会保存
         final_asr_text = voice_service.stop_recording()
         
         return StopRecordingResponse(
@@ -450,8 +450,8 @@ async def stop_recording(request: StopRecordingRequest = StopRecordingRequest())
 class SaveTextRequest(BaseModel):
     """直接保存文本请求"""
     text: str
-    app_type: str = 'voice-note'  # 应用类型，默认为voice-note
-    blocks: Optional[list] = None  # ⭐ 新增：完整的 blocks 数据（包含时间信息和类型）
+    app_type: str = 'voice-note'
+    blocks: Optional[list] = None
 
 
 class SaveTextResponse(BaseModel):
@@ -474,14 +474,13 @@ async def save_text_directly(request: SaveTextRequest):
                 message="文本内容为空"
             )
         
-        # 保存文本记录
         metadata = {
             'language': voice_service.config.get('asr.language', 'zh-CN'),
-            'provider': 'manual',  # 标记为手动输入
-            'input_method': 'keyboard',  # 输入方式：键盘
-            'app_type': request.app_type,  # 应用类型
+            'provider': 'manual',
+            'input_method': 'keyboard',
+            'app_type': request.app_type,
             'created_at': voice_service._get_timestamp(),
-            'blocks': request.blocks  # ⭐ 新增：保存完整的 blocks 数据
+            'blocks': request.blocks
         }
         
         record_id = voice_service.storage_provider.save_record(request.text, metadata)

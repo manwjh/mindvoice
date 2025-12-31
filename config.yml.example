@@ -12,10 +12,6 @@ asr:
   app_key: ""  # 请填入你的 app_key
   access_key: ""  # 请填入你的 access_key
   language: zh-CN  # 识别语言：zh-CN（中文）或 en-US（英语）
-  
-  # 智能断句修正配置
-  enable_utterance_merge: true  # 是否启用基于时间间隔的utterance累加修正（默认开启）
-  merge_threshold_ms: 800  # 累加时间阈值（毫秒），间隔小于此值的句子会自动累加
 
 # LLM 配置（大语言模型）
 llm:

@@ -19,48 +19,24 @@ export interface Block {
   type: BlockType;
   content: string;
   isAsrWriting?: boolean;
-  noteInfo?: NoteInfo; // 仅当 type 为 'note-info' 时使用
-  // ASR 时间信息（仅对 ASR 识别的文本）
-  startTime?: number; // 开始时间（毫秒）
-  endTime?: number;   // 结束时间（毫秒）
+  noteInfo?: NoteInfo;
+  startTime?: number;
+  endTime?: number;
 }
 
 interface BlockEditorProps {
   initialContent?: string;
-  initialBlocks?: Block[];  // ⭐ 新增：用于恢复完整的 blocks 数据
+  initialBlocks?: Block[];
   onContentChange?: (content: string, isDefiniteUtterance?: boolean) => void;
   onNoteInfoChange?: (noteInfo: NoteInfo) => void;
   isRecording?: boolean;
 }
 
 export interface BlockEditorHandle {
-  /**
-   * 追加ASR识别的文本到编辑器
-   * @param text - 识别的文本内容
-   * @param isDefiniteUtterance - 是否为确定的utterance（当ASR服务返回definite=true时，此值为true）
-   *                               表示一个完整的、确定的语音识别单元已完成
-   * @param timeInfo - 时间信息（可选）{ startTime: number, endTime: number } 单位：毫秒
-   */
   appendAsrText: (text: string, isDefiniteUtterance?: boolean, timeInfo?: { startTime?: number; endTime?: number }) => void;
-  
-  /**
-   * 设置笔记信息的结束时间
-   */
   setNoteInfoEndTime: () => void;
-  
-  /**
-   * 获取当前的笔记信息
-   */
   getNoteInfo: () => NoteInfo | undefined;
-  
-  /**
-   * 获取完整的 blocks 数据（用于保存）
-   */
   getBlocks: () => Block[];
-  
-  /**
-   * 设置 blocks 数据（用于恢复）
-   */
   setBlocks: (newBlocks: Block[]) => void;
 }
 
@@ -126,18 +102,12 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
   const asrWritingBlockIdRef = useRef<string | null>(null);
   const isAsrActive = isRecording;
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
-  
-  // 注：utterance合并逻辑已移至后端ASR Provider，前端只需简单处理
 
-  // 当 initialContent 或 initialBlocks 从外部改变时（如加载历史记录），同步更新 blocks
-  // 但只在 ASR 未激活时更新，避免覆盖正在进行的 ASR 输入
   useEffect(() => {
     if (!isAsrActive) {
-      // ⭐ 优先使用 initialBlocks（包含完整的时间信息和类型）
       if (initialBlocks && initialBlocks.length > 0) {
         setBlocks(initialBlocks);
       } else {
-        // 降级：从纯文本创建 blocks（向后兼容旧数据）
         const newBlocks = createBlocksFromContent(initialContent);
         setBlocks(newBlocks);
       }
@@ -145,27 +115,26 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
     }
   }, [initialContent, initialBlocks, isAsrActive]);
 
-  // 查找或创建空行并设置为ASR写入状态
   const ensureAsrWritingBlock = useCallback((blocks: Block[]): { blocks: Block[]; blockId: string; index: number } => {
     const updated = [...blocks];
-    // 先清除所有 block 的 ASR 写入标记，确保只有一个 block 处于 ASR 写入状态
-    updated.forEach((b) => {
-      b.isAsrWriting = false;
-    });
+    updated.forEach((b) => b.isAsrWriting = false);
     
-    // 优先重用已有的空 block（如果存在）
-    const emptyBlockIdx = updated.findIndex((b) => !b.content || b.content.trim() === '');
+    let emptyBlockIdx = -1;
+    for (let i = updated.length - 1; i >= 0; i--) {
+      if (!updated[i].content || updated[i].content.trim() === '') {
+        emptyBlockIdx = i;
+        break;
+      }
+    }
     
-    if (emptyBlockIdx >= 0) {
-      // 重用已有的空 block
+    if (emptyBlockIdx >= 0 && emptyBlockIdx === updated.length - 1) {
       updated[emptyBlockIdx] = {
         ...updated[emptyBlockIdx],
         isAsrWriting: true,
-        content: '', // 确保内容为空
+        content: '',
       };
       return { blocks: updated, blockId: updated[emptyBlockIdx].id, index: emptyBlockIdx };
     } else {
-      // 没有空 block，在末尾创建一个新的
       const newBlock = createEmptyBlock(true);
       updated.push(newBlock);
       const emptyIdx = updated.length - 1;
@@ -173,10 +142,8 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
     }
   }, []);
 
-  // 启动/停止ASR时：确保有一个block处于激活状态
   useEffect(() => {
     if (isAsrActive) {
-      // ASR启动时，确保有一个激活的block
       if (!asrWritingBlockIdRef.current) {
         setBlocks((prev) => {
           const { blocks: updated, blockId } = ensureAsrWritingBlock(prev);
@@ -185,7 +152,6 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
         });
       }
     } else {
-      // 停止ASR时：清除所有ASR标记
       setBlocks((prev) => prev.map((b) => ({ ...b, isAsrWriting: false })));
       asrWritingBlockIdRef.current = null;
     }
@@ -198,12 +164,10 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
       setBlocks((prev) => {
         const updated = [...prev];
         
-        // 查找当前激活的Block
         let currentIdx = asrWritingBlockIdRef.current
           ? updated.findIndex((b) => b.id === asrWritingBlockIdRef.current)
           : -1;
         
-        // 如果找不到，确保有一个ASR写入block
         if (currentIdx < 0) {
           const { blocks: newBlocks, blockId, index } = ensureAsrWritingBlock(updated);
           updated.splice(0, updated.length, ...newBlocks);
@@ -211,9 +175,7 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
           currentIdx = index;
         }
 
-        // 简化的逻辑：直接显示ASR返回的文本，不做去重处理
         if (isDefiniteUtterance) {
-          // 确定的utterance：固化到当前block，并创建新的空block
           updated[currentIdx] = {
             ...updated[currentIdx],
             content: newText,
@@ -222,19 +184,16 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
             endTime: timeInfo?.endTime,
           };
           
-          // 创建新的空block用于下一个输入
           const nextBlock = createEmptyBlock(true);
           updated.push(nextBlock);
           asrWritingBlockIdRef.current = nextBlock.id;
         } else {
-          // 中间结果：继续更新当前block
           updated[currentIdx] = {
             ...updated[currentIdx],
             content: newText,
           };
         }
         
-        // 触发回调
         const content = blocksToContent(updated);
         onContentChange?.(content, isDefiniteUtterance);
         
@@ -273,12 +232,10 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
   }, [blocks]);
 
   const getBlocks = useCallback((): Block[] => {
-    // ⭐ 返回完整的 blocks 数据（包含时间信息和类型）
     return blocks;
   }, [blocks]);
 
   const setBlocksFromExternal = useCallback((newBlocks: Block[]) => {
-    // ⭐ 从外部设置 blocks（用于恢复历史记录）
     setBlocks(newBlocks);
   }, []);
 

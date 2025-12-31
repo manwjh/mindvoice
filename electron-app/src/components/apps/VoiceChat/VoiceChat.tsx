@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '../../shared/AppLayout';
 import { StatusIndicator, StatusType, AppStatusType } from '../../shared/StatusIndicator';
 import { AppButton } from '../../shared/AppButton';
@@ -15,12 +15,19 @@ interface VoiceChatProps {
   apiConnected: boolean;
   onStartWork: () => void;
   onEndWork: () => void;
+  onContentChange: (hasContent: boolean) => void;
 }
 
-export const VoiceChat: React.FC<VoiceChatProps> = ({ apiConnected, onStartWork, onEndWork }) => {
+export const VoiceChat: React.FC<VoiceChatProps> = ({ apiConnected, onStartWork, onEndWork, onContentChange }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // 通知父组件内容变化（用于工作状态检查）
+  useEffect(() => {
+    const hasContent = messages.length > 0 || isListening || isProcessing;
+    onContentChange(hasContent);
+  }, [messages.length, isListening, isProcessing, onContentChange]);
 
   const handleVoiceInput = () => {
     // 开始语音输入时，启动工作会话
@@ -32,11 +39,6 @@ export const VoiceChat: React.FC<VoiceChatProps> = ({ apiConnected, onStartWork,
       return;
     }
     
-    // TODO: 实现语音输入功能
-    // 1. 启动ASR
-    // 2. 获取识别文本
-    // 3. 发送到LLM
-    // 4. 显示回复
     console.log('语音输入功能待实现');
   };
 

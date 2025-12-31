@@ -316,6 +316,7 @@ Before submitting a PR:
 - Keep examples **up to date**
 - Include **screenshots** for UI changes
 - Reference related documents using relative links
+- **Only write necessary Markdown documents**: Don't create documentation files unless they provide clear value. Avoid creating redundant or trivial `.md` files
 
 ## Key Documentation Files
 

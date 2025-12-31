@@ -11,8 +11,8 @@ interface BlockEditorHandle {
   appendAsrText: (text: string, isDefiniteUtterance?: boolean, timeInfo?: { startTime?: number; endTime?: number }) => void;
   setNoteInfoEndTime: () => void;
   getNoteInfo: () => NoteInfo | undefined;
-  getBlocks: () => any[];  // ⭐ 新增
-  setBlocks: (blocks: any[]) => void;  // ⭐ 新增
+  getBlocks: () => any[];
+  setBlocks: (blocks: any[]) => void;
 }
 
 interface VoiceNoteProps {
@@ -34,7 +34,6 @@ interface VoiceNoteProps {
   isWorkSessionActive: boolean;
   onStartWork: () => void;
   onEndWork: () => void;
-  // ⭐ 新增：用于恢复完整的 blocks 数据
   initialBlocks?: any[];
 }
 
@@ -59,8 +58,8 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
   const [noteInfo, setNoteInfo] = useState<NoteInfo | null>(null);
   const voiceNoteContentRef = useRef<HTMLDivElement>(null);
   
-  // 判断是否显示欢迎界面
-  const showWelcome = !isWorkSessionActive && !text.trim();
+  // 判断是否显示欢迎界面：只要工作会话未激活，就显示欢迎界面
+  const showWelcome = !isWorkSessionActive;
 
   // 监听文本选择，显示格式化工具栏
   useEffect(() => {
@@ -106,7 +105,6 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
   }, []);
 
   const handleFormat = useCallback((format: string) => {
-    // TODO: 实现格式化功能
     console.log('格式化:', format);
     setShowToolbar(false);
   }, []);
@@ -252,6 +250,17 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
                   ariaLabel="复制文本"
                 >
                   复制
+                </AppButton>
+                <AppButton
+                  onClick={onEndWork}
+                  disabled={asrState !== 'idle'}
+                  variant="ghost"
+                  size="medium"
+                  icon="🚪"
+                  title="退出当前笔记会话"
+                  ariaLabel="退出"
+                >
+                  退出
                 </AppButton>
               </ButtonGroup>
             </>

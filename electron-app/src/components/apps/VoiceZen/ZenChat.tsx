@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './ZenChat.css';
 
 interface ZenChatProps {
   onExit: () => void;
+  onMessagesChange: (hasContent: boolean) => void;
 }
 
 interface Message {
@@ -15,30 +16,23 @@ interface Message {
 /**
  * 禅对话界面
  * 与一禅小和尚进行对话
- * 
- * TODO: 实现以下功能
- * - 语音输入集成
- * - LLM 对话集成
- * - 背景音乐播放
- * - 情绪分析和图片/音乐选择
- * - 长记忆库管理
- * - 知识库检索
- * - 用户画像更新
  */
-const ZenChat: React.FC<ZenChatProps> = ({ onExit }) => {
+const ZenChat: React.FC<ZenChatProps> = ({ onExit, onMessagesChange }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [backgroundImage, setBackgroundImage] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // TODO: 实现语音输入
+  useEffect(() => {
+    onMessagesChange(messages.length > 0);
+  }, [messages.length, onMessagesChange]);
+
   const handleVoiceInput = () => {
-    console.log('TODO: 实现语音输入');
+    console.log('语音输入功能待实现');
   };
 
-  // TODO: 实现背景音乐控制
   const toggleMusic = () => {
     setIsPlaying(!isPlaying);
-    console.log('TODO: 实现背景音乐播放/暂停');
+    console.log('背景音乐功能待实现');
   };
 
   return (

@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppLayout } from '../../shared/AppLayout';
 import ZenWelcome from './ZenWelcome';
 import ZenChat from './ZenChat';
 import './VoiceZen.css';
+
+interface VoiceZenProps {
+  onStartWork: () => void;
+  onEndWork: () => void;
+  onContentChange: (hasContent: boolean) => void;
+}
 
 /**
  * 禅 - 角色扮演对话应用
@@ -19,15 +25,29 @@ import './VoiceZen.css';
  * 
  * 当前状态：脚手架阶段
  */
-const VoiceZen: React.FC = () => {
+const VoiceZen: React.FC<VoiceZenProps> = ({ onStartWork, onEndWork, onContentChange }) => {
   const [isStarted, setIsStarted] = useState(false);
+  const [hasMessages, setHasMessages] = useState(false);
+
+  // 通知父组件内容变化（用于工作状态检查）
+  useEffect(() => {
+    const hasContent = isStarted && hasMessages;
+    onContentChange(hasContent);
+  }, [isStarted, hasMessages, onContentChange]);
 
   const handleStart = () => {
     setIsStarted(true);
+    onStartWork();
   };
 
   const handleExit = () => {
     setIsStarted(false);
+    setHasMessages(false);
+    onEndWork();
+  };
+  
+  const handleMessagesChange = (hasContent: boolean) => {
+    setHasMessages(hasContent);
   };
 
   return (
@@ -40,7 +60,7 @@ const VoiceZen: React.FC = () => {
         {!isStarted ? (
           <ZenWelcome onStart={handleStart} />
         ) : (
-          <ZenChat onExit={handleExit} />
+          <ZenChat onExit={handleExit} onMessagesChange={handleMessagesChange} />
         )}
       </div>
     </AppLayout>

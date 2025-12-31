@@ -1,6 +1,6 @@
 """
 火山引擎 ASR 提供商实现
-基于 ChefMate 3 项目的 asr_client.py
+采用官方参考架构：发送和接收完全并发，通过队列解耦
 """
 import asyncio
 import aiohttp
@@ -127,20 +127,20 @@ class RequestBuilder:
     @staticmethod
     def new_audio_only_request(seq: int, segment: bytes, is_last: bool = False) -> bytes:
         header = AsrRequestHeader.default_header().with_message_type(MessageType.CLIENT_AUDIO_ONLY_REQUEST)
+        
         if is_last:
-            # 根据协议规格：客户端发送最后一包时使用 NEG_SEQUENCE (0b0010)
-            # header后4个字节不为sequence number，仅指示此为最后一包
-            header.with_message_type_specific_flags(MessageTypeSpecificFlags.NEG_SEQUENCE)
+            # 最后一包：使用 NEG_WITH_SEQUENCE 标志，序列号设为负值
+            header.with_message_type_specific_flags(MessageTypeSpecificFlags.NEG_WITH_SEQUENCE)
+            seq = -seq
         else:
+            # 普通音频包：使用 POS_SEQUENCE 标志
             header.with_message_type_specific_flags(MessageTypeSpecificFlags.POS_SEQUENCE)
         
         req = bytearray()
         req.extend(header.to_bytes())
         
-        # 只有在非最后一包时才包含 sequence number
-        # 最后一包使用 NEG_SEQUENCE (0b0010)，不包含 sequence number
-        if not is_last:
-            req.extend(struct.pack('>i', seq))
+        # 总是包含序列号（包括最后一包，但最后一包的序列号是负数）
+        req.extend(struct.pack('>i', seq))
         
         compressed_segment = gzip.compress(segment)
         req.extend(struct.pack('>I', len(compressed_segment)))
@@ -168,7 +168,7 @@ class ResponseParser:
         
         try:
             if len(msg) < 4:
-                logger.error("响应消息太短")
+                logger.error("[ASR-WS] ✗ 响应消息太短")
                 return response
             
             header_size_words = msg[0] & 0x0F
@@ -216,24 +216,24 @@ class ResponseParser:
                 try:
                     payload = gzip.decompress(payload)
                 except Exception as e:
-                    logger.error(f"Failed to decompress payload: {e}")
+                    logger.error(f"[ASR-WS] ✗ 解压缩失败: {e}")
                     return response
             
             try:
                 if serialization_type == SerializationType.JSON:
                     response.payload_msg = json.loads(payload.decode('utf-8'))
             except Exception as e:
-                logger.error(f"Failed to parse payload: {e}")
+                logger.error(f"[ASR-WS] ✗ JSON解析失败: {e}")
                 return response
         except Exception as e:
-            logger.error(f"解析响应失败: {e}")
+            logger.error(f"[ASR-WS] ✗ 解析响应失败: {e}")
             return response
         
         return response
 
 
 class VolcanoASRProvider(BaseASRProvider):
-    """火山引擎 ASR 提供商"""
+    """火山引擎 ASR 提供商 - 采用官方参考架构：发送/接收完全并发"""
     
     PROVIDER_NAME = "volcano"
     
@@ -247,20 +247,14 @@ class VolcanoASRProvider(BaseASRProvider):
         self.conn = None
         self.seq = 1
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._result_text = ""
-        self._recognition_event: Optional[asyncio.Event] = None
         
         self._streaming_active = False
-        self._stopping = False
-        self._receive_task: Optional[asyncio.Task] = None
-        self._on_text_callback: Optional[Callable[[str, bool], None]] = None
+        self._audio_queue: Optional[asyncio.Queue] = None
+        self._sender_task: Optional[asyncio.Task] = None
+        self._receiver_task: Optional[asyncio.Task] = None
+        self._on_text_callback: Optional[Callable[[str, bool, dict], None]] = None
         self._last_text = ""
-        
-        # 智能断句修正配置
-        self._enable_utterance_merge = True  # 是否启用utterance累加修正
-        self._merge_threshold_ms = 800  # 累加时间阈值（毫秒）
-        self._last_utterance_end_time = 0  # 上一个utterance的结束时间
-        self._accumulated_text = ""  # 累积的文本
+        self._current_text = ""
     
     @property
     def name(self) -> str:
@@ -278,24 +272,19 @@ class VolcanoASRProvider(BaseASRProvider):
         self.access_key = config.get('access_key', '')
         
         if not self.access_key or not self.access_key.strip():
-            logger.error("火山引擎 ASR 配置不完整：缺少 access_key")
-            logger.error("请检查 config.yml 中的 asr.access_key 配置")
+            logger.error("[ASR-Init] ✗ 配置不完整：缺少 access_key")
+            logger.error("[ASR-Init] 请检查 config.yml 中的 asr.access_key 配置")
             return False
         
         if not self.app_key or not self.app_key.strip():
-            logger.error("火山引擎 ASR 配置不完整：缺少 app_key 或 app_id")
-            logger.error("请检查 config.yml 中的 asr.app_key 或 asr.app_id 配置")
+            logger.error("[ASR-Init] ✗ 配置不完整：缺少 app_key 或 app_id")
+            logger.error("[ASR-Init] 请检查 config.yml 中的 asr.app_key 或 asr.app_id 配置")
             return False
         
-        # 读取智能断句修正配置
-        self._enable_utterance_merge = config.get('enable_utterance_merge', True)
-        self._merge_threshold_ms = config.get('merge_threshold_ms', 800)
-        
-        logger.info(f"[ASR] 初始化配置: base_url={self.base_url}")
-        logger.info(f"[ASR] app_id={self.app_id if self.app_id else '(未设置)'}")
-        logger.info(f"[ASR] app_key={'已设置 (' + str(len(self.app_key)) + ' 字符)' if self.app_key else '未设置'}")
-        logger.info(f"[ASR] access_key={'已设置 (' + str(len(self.access_key)) + ' 字符)' if self.access_key else '未设置'}")
-        logger.info(f"[ASR] 智能断句修正: {'启用' if self._enable_utterance_merge else '禁用'} (阈值={self._merge_threshold_ms}ms)")
+        logger.info(f"[ASR-Init] 配置加载: base_url={self.base_url}")
+        logger.info(f"[ASR-Init] app_id={'已设置' if self.app_id else '未设置'}")
+        logger.info(f"[ASR-Init] app_key=已设置 ({len(self.app_key)} 字符)")
+        logger.info(f"[ASR-Init] access_key=已设置 ({len(self.access_key)} 字符)")
         
         return super().initialize(config)
     
@@ -303,11 +292,11 @@ class VolcanoASRProvider(BaseASRProvider):
         """连接 ASR 服务"""
         # 验证凭证格式
         if not self.access_key or not self.access_key.strip():
-            logger.error("[ASR] 认证失败: access_key 为空，请检查 config.yml")
+            logger.error("[ASR-WS] ✗ 认证失败: access_key 为空，请检查 config.yml")
             return False
         
         if not self.app_key or not self.app_key.strip():
-            logger.error("[ASR] 认证失败: app_key 为空，请检查 config.yml")
+            logger.error("[ASR-WS] ✗ 认证失败: app_key 为空，请检查 config.yml")
             return False
         
         max_retries = 3
@@ -316,9 +305,9 @@ class VolcanoASRProvider(BaseASRProvider):
         for attempt in range(max_retries):
             try:
                 headers = RequestBuilder.new_auth_headers(self.access_key, self.app_key)
-                logger.info(f"[ASR] 连接尝试 {attempt + 1}/{max_retries}")
-                logger.info(f"[ASR] 认证信息: access_key={self.access_key[:8]}...{self.access_key[-4:] if len(self.access_key) > 12 else '***'}, "
-                           f"app_key={self.app_key[:8]}...{self.app_key[-4:] if len(self.app_key) > 12 else '***'}")
+                logger.info(f"[ASR-WS] 连接尝试 {attempt + 1}/{max_retries}")
+                logger.info(f"[ASR-WS] URL: {self.base_url}")
+                logger.debug(f"[ASR-WS] Headers: {headers}")
                 
                 timeout = aiohttp.ClientTimeout(total=30)
                 
@@ -326,50 +315,54 @@ class VolcanoASRProvider(BaseASRProvider):
                     await self.session.close()
                 self.session = aiohttp.ClientSession(timeout=timeout)
                 
-                logger.info(f"[ASR] 连接URL: {self.base_url}")
+                # 连接 WebSocket
                 self.conn = await self.session.ws_connect(self.base_url, headers=headers)
-                logger.info(f"[ASR] WebSocket连接成功")
+                
+                # 记录连接成功
+                logger.info(f"[ASR-WS] ✓ 连接成功")
+                logger.info(f"[ASR-WS] 协议: {self.conn.protocol if hasattr(self.conn, 'protocol') else 'wss'}")
+                logger.info(f"[ASR-WS] 状态: {'已连接' if not self.conn.closed else '已关闭'}")
                 
                 self._loop = asyncio.get_event_loop()
-                
-                logger.info(f"成功连接到火山引擎 ASR 服务: {self.base_url}")
                 return True
                 
             except aiohttp.ClientResponseError as e:
                 error_msg = f"HTTP错误 {e.status}: {e.message}"
                 if e.status == 403:
-                    error_msg += " (认证失败，请检查 access_key 和 app_key 是否正确)"
-                    error_msg += "\n提示：请确认："
-                    error_msg += "\n  1. access_key 和 app_key 是否从火山引擎控制台正确获取"
-                    error_msg += "\n  2. 凭证是否已过期或已被撤销"
-                    error_msg += "\n  3. 凭证是否有访问 ASR 服务的权限"
-                    error_msg += f"\n  4. 当前使用的 access_key 前8位: {self.access_key[:8]}..."
-                    error_msg += f"\n  5. 当前使用的 app_key 前8位: {self.app_key[:8]}..."
-                logger.error(f"[ASR] 连接错误 (第{attempt + 1}次尝试): {error_msg}")
+                    error_msg += " (认证失败)"
+                    logger.error(f"[ASR-WS] ✗ {error_msg}")
+                    logger.error(f"[ASR-WS] 请检查：")
+                    logger.error(f"[ASR-WS]   1. access_key 和 app_key 是否正确")
+                    logger.error(f"[ASR-WS]   2. 凭证是否已过期或被撤销")
+                    logger.error(f"[ASR-WS]   3. 凭证是否有访问 ASR 服务的权限")
+                    logger.error(f"[ASR-WS]   4. access_key 前缀: {self.access_key[:8]}...")
+                    logger.error(f"[ASR-WS]   5. app_key 前缀: {self.app_key[:8]}...")
+                else:
+                    logger.error(f"[ASR-WS] ✗ {error_msg} (第{attempt + 1}次尝试)")
+                
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    logger.error(f"[ASR] 连接最终失败: {error_msg}")
+                    logger.error(f"[ASR-WS] ✗ 连接最终失败，已重试{max_retries}次")
                     return False
                     
             except asyncio.TimeoutError as e:
-                logger.warning(f"[ASR] 连接超时 (第{attempt + 1}次尝试): {str(e)}")
+                logger.warning(f"[ASR-WS] ⚠ 连接超时 (第{attempt + 1}次尝试)")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    logger.error(f"[ASR] 连接最终超时，所有重试失败")
+                    logger.error(f"[ASR-WS] ✗ 连接最终超时，所有重试失败")
                     return False
                     
             except Exception as e:
-                error_msg = str(e)
-                logger.warning(f"[ASR] 连接错误 (第{attempt + 1}次尝试): {error_msg}")
+                logger.warning(f"[ASR-WS] ⚠ 连接错误 (第{attempt + 1}次尝试): {str(e)}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     continue
                 else:
-                    logger.error(f"[ASR] 连接最终失败: {error_msg}")
+                    logger.error(f"[ASR-WS] ✗ 连接最终失败: {str(e)}")
                     return False
         
         return False
@@ -377,29 +370,26 @@ class VolcanoASRProvider(BaseASRProvider):
     async def _disconnect(self):
         """断开连接"""
         try:
+            logger.info("[ASR-WS] 开始断开连接...")
+            
             # 关闭WebSocket连接
             if self.conn:
                 if not self.conn.closed:
-                    logger.debug("[ASR] 正在关闭WebSocket连接...")
+                    logger.info("[ASR-WS] 正在关闭WebSocket...")
                     await self.conn.close()
-                    logger.debug("[ASR] WebSocket连接已关闭")
-                else:
-                    logger.debug("[ASR] WebSocket连接已关闭，无需再次关闭")
+                    logger.info("[ASR-WS] ✓ WebSocket已关闭")
                 self.conn = None
             
             # 关闭HTTP会话
             if self.session:
                 if not self.session.closed:
-                    logger.debug("[ASR] 正在关闭HTTP会话...")
                     await self.session.close()
-                    logger.debug("[ASR] HTTP会话已关闭")
-                else:
-                    logger.debug("[ASR] HTTP会话已关闭，无需再次关闭")
+                    logger.debug("[ASR-WS] ✓ HTTP会话已关闭")
                 self.session = None
             
-            logger.info("[ASR] ASR WebSocket连接已断开")
+            logger.info("[ASR-WS] ✓ 连接已断开")
         except Exception as e:
-            logger.error(f"[ASR] 断开连接失败: {e}", exc_info=True)
+            logger.error(f"[ASR-WS] ✗ 断开连接失败: {e}", exc_info=True)
             # 即使关闭失败，也清空引用
             self.conn = None
             self.session = None
@@ -408,153 +398,13 @@ class VolcanoASRProvider(BaseASRProvider):
         """发送完整客户端请求"""
         try:
             request = RequestBuilder.new_full_client_request(self.seq)
+            logger.info(f"[ASR-WS] → 发送完整请求 (seq={self.seq}, size={len(request)}B)")
             await self.conn.send_bytes(request)
             self.seq += 1
+            logger.info(f"[ASR-WS] ✓ 完整请求已发送")
         except Exception as e:
-            logger.error(f"发送完整客户端请求失败: {e}")
+            logger.error(f"[ASR-WS] ✗ 发送完整请求失败: {e}")
             raise
-    
-    async def _send_audio_data(self, audio_data: bytes, is_last: bool = False):
-        """发送音频数据"""
-        try:
-            if not self.conn or self.conn.closed:
-                logger.error("[ASR] 连接已关闭或不可用，无法发送音频数据")
-                return
-            request = RequestBuilder.new_audio_only_request(self.seq, audio_data, is_last)
-            request_size = len(request)
-            # logger.info(f"[ASR] 发送音频数据: seq={self.seq}, 音频大小={len(audio_data)}字节, 请求大小={request_size}字节, is_last={is_last}")
-            await self.conn.send_bytes(request)
-            # 只有在非最后一包时才递增序列号（最后一包不包含序列号，因此不递增）
-            if not is_last:
-                self.seq += 1
-                logger.debug(f"[ASR] 音频数据已发送，下一个seq={self.seq}")
-            else:
-                logger.debug(f"[ASR] 最后一个音频包已发送（使用NEG_SEQUENCE，不包含序列号）")
-        except Exception as e:
-            logger.error(f"[ASR] 发送音频数据失败: {e}", exc_info=True)
-    
-    async def _receive_results(self):
-        """接收 ASR 结果"""
-        try:
-            async for msg in self.conn:
-                if msg.type == aiohttp.WSMsgType.BINARY:
-                    try:
-                        response = ResponseParser.parse_response(msg.data)
-                        
-                        if response.payload_msg:
-                            result = response.payload_msg.get('result', {})
-                            if isinstance(result, dict):
-                                # 使用统一的处理方法，确保回调被正确调用
-                                self._handle_recognition_result(result, response.is_last_package)
-                        
-                        if response.code != 0:
-                            error_reasons = {
-                                1001: "参数错误",
-                                1002: "认证失败",
-                                1003: "配额超限",
-                                1004: "服务不可用",
-                                1005: "内部错误",
-                                1006: "请求超时",
-                                1007: "音频格式错误",
-                                1008: "音频长度错误",
-                                1009: "音频采样率错误",
-                                1010: "音频声道数错误",
-                                45000081: "连接超时或音频流中断（可能因暂停录音导致）"
-                            }
-                            reason = error_reasons.get(response.code, f"未知错误码: {response.code}")
-                            logger.error(f"[ASR] 错误码: {response.code}, 原因: {reason}")
-                            if self._recognition_event:
-                                self._recognition_event.set()
-                            break
-                        
-                        if response.is_last_package:
-                            logger.debug(f"[ASR] 接收结束: is_last_package={response.is_last_package}")
-                            if self._recognition_event:
-                                self._recognition_event.set()
-                            break
-                    except Exception as e:
-                        logger.error(f"[ASR] 解析响应失败: {e}", exc_info=True)
-                        continue
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.error(f"[ASR] WebSocket错误: {msg.data}")
-                    if self._recognition_event:
-                        self._recognition_event.set()
-                    break
-                elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    logger.info("[ASR] WebSocket连接已关闭")
-                    if self._recognition_event:
-                        self._recognition_event.set()
-                    break
-        except Exception as e:
-            logger.error(f"[ASR] 接收结果异常: {e}", exc_info=True)
-            if self._recognition_event:
-                self._recognition_event.set()
-    
-    def recognize(self, audio_data: bytes, language: str = "zh-CN", **kwargs) -> str:
-        """识别音频（同步接口，内部使用异步）"""
-        if not self._initialized:
-            return ""
-        
-        # 使用事件循环运行异步识别
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(self._recognize_async(audio_data, language))
-    
-    async def _recognize_async(self, audio_data: bytes, language: str = "zh-CN") -> str:
-        """异步识别音频"""
-        self._result_text = ""
-        self._recognition_event = asyncio.Event()
-        self.seq = 1
-        
-        # 连接
-        if not await self._connect():
-            logger.error("[ASR] 连接失败，无法进行识别")
-            return ""
-        
-        receive_task = None
-        try:
-            # 发送完整请求
-            logger.debug("[ASR] 发送完整客户端请求")
-            await self._send_full_request()
-            await asyncio.sleep(0.2)
-            
-            # 启动结果接收任务
-            logger.debug("[ASR] 启动结果接收任务")
-            receive_task = asyncio.create_task(self._receive_results())
-            await asyncio.sleep(0.2)
-            
-            # 发送音频数据
-            logger.info(f"[ASR] 准备发送音频数据进行识别，长度: {len(audio_data)} 字节")
-            await self._send_audio_data(audio_data, is_last=True)
-            logger.info("[ASR] 音频数据已发送，等待识别结果...")
-            
-            # 等待结果（最多10秒）
-            try:
-                await asyncio.wait_for(self._recognition_event.wait(), timeout=10.0)
-                logger.debug("[ASR] 收到识别结果信号")
-            except asyncio.TimeoutError:
-                logger.warning("[ASR] 识别超时")
-            
-            # 等待接收任务完成
-            await asyncio.sleep(0.5)
-            if receive_task and not receive_task.done():
-                receive_task.cancel()
-                try:
-                    await receive_task
-                except asyncio.CancelledError:
-                    pass
-            
-            logger.info(f"[ASR] 识别完成，结果: '{self._result_text}'")
-            return self._result_text
-        except Exception as e:
-            logger.error(f"[ASR] 识别过程出错: {e}")
-            return ""
-        finally:
-            await self._disconnect()
     
     def is_available(self) -> bool:
         """检查服务是否可用"""
@@ -565,224 +415,168 @@ class VolcanoASRProvider(BaseASRProvider):
         
         Args:
             callback: 回调函数 (text: str, is_definite_utterance: bool, time_info: dict)
-                      text: 识别的文本（已在后端累加处理）
-                      is_definite_utterance: 是否为确定的utterance（当ASR服务返回definite=True时，此值为True）
-                                             表示一个完整的、确定的语音识别单元已完成
-                      time_info: 时间信息字典，包含:
-                                - start_time: 开始时间（毫秒）
-                                - end_time: 结束时间（毫秒）
-                                注意：仅在 is_definite_utterance=True 时有值
+                      text: 识别的文本
+                      is_definite_utterance: 是否为确定的utterance（ASR返回definite=True）
+                      time_info: 时间信息 {start_time: 毫秒, end_time: 毫秒}
         """
         self._on_text_callback = callback
     
     async def start_streaming_recognition(self, language: str = "zh-CN") -> bool:
-        """开始流式识别"""
         if self._streaming_active:
-            logger.warning("[ASR] 流式识别已在进行中")
+            logger.warning("[ASR-WS] ⚠ 流式识别已在进行中")
             return False
         
-        # 连接
+        logger.info("[ASR-WS] 准备开始流式识别...")
+        
         if not await self._connect():
-            logger.error("[ASR] 连接失败，无法开始流式识别")
+            logger.error("[ASR-WS] ✗ 连接失败")
             return False
         
         try:
             self._last_text = ""
-            self._result_text = ""
-            self._stopping = False
+            self._current_text = ""
             self.seq = 1
-            self._recognition_event = asyncio.Event()
-            self._last_utterance_end_time = 0  # 重置utterance结束时间
-            self._accumulated_text = ""  # 重置累积文本
-            logger.info("[ASR] 已重置状态，开始新的识别会话")
+            self._audio_queue = asyncio.Queue()
             
             await self._send_full_request()
-            await asyncio.sleep(0.2)
             
-            self._receive_task = asyncio.create_task(self._receive_streaming_results())
-            await asyncio.sleep(0.2)
+            self._sender_task = asyncio.create_task(self._audio_sender())
+            self._receiver_task = asyncio.create_task(self._audio_receiver())
             
             self._streaming_active = True
-            logger.info("[ASR] 流式识别已启动")
+            logger.info("[ASR-WS] ✓ 流式识别已启动")
             return True
         except Exception as e:
-            logger.error(f"[ASR] 启动流式识别失败: {e}")
+            logger.error(f"[ASR-WS] ✗ 启动失败: {e}")
             await self._disconnect()
             return False
     
     async def send_audio_chunk(self, audio_data: bytes):
-        """发送音频数据块"""
-        if not self.conn or self.conn.closed:
-            return
-        
-        if not self._streaming_active:
+        if not self._streaming_active or not self._audio_queue:
             return
         
         try:
-            await self._send_audio_data(audio_data, is_last=False)
+            await self._audio_queue.put(audio_data)
         except Exception as e:
-            logger.error(f"[ASR] 发送音频数据块失败: {e}", exc_info=True)
+            logger.error(f"[ASR-WS] ✗ 音频数据入队失败: {e}")
     
     async def stop_streaming_recognition(self) -> str:
-        """停止流式识别并返回最终结果"""
-        logger.info("[ASR] 开始停止流式识别...")
-        
-        # 如果流式识别未激活，但连接仍然存在，也需要关闭连接
         if not self._streaming_active:
-            logger.warning("[ASR] 流式识别未激活，但检查并关闭连接")
-            # 即使未激活，也要确保连接被关闭
-            await self._disconnect()
             return self._last_text
         
+        self._streaming_active = False
+        
+        if self._audio_queue:
+            try:
+                self._audio_queue.put_nowait(None)
+            except:
+                pass
+        
+        return self._last_text
+    
+    async def _audio_sender(self):
         try:
-            self._stopping = True
-            logger.debug("[ASR] 发送最后一个音频包（空包）以结束流式识别...")
+            last_audio = None
             
-            # 发送最后一个空音频包，标记流式识别结束
-            if self.conn and not self.conn.closed:
-                try:
-                    await self._send_audio_data(b"", is_last=True)
-                    logger.debug("[ASR] 最后一个音频包已发送")
-                except Exception as e:
-                    logger.warning(f"[ASR] 发送最后一个音频包失败: {e}")
-            
-            # 等待最终结果（缩短到2秒）
-            if self._recognition_event:
-                try:
-                    await asyncio.wait_for(self._recognition_event.wait(), timeout=2.0)
-                    logger.debug("[ASR] 收到最终结果信号")
-                except asyncio.TimeoutError:
-                    logger.warning("[ASR] 等待最终结果超时，强制关闭连接")
-            
-            # 短暂等待，确保最后的响应被处理（0.5秒足够）
-            await asyncio.sleep(0.5)
-            
-            # 取消接收任务
-            if self._receive_task and not self._receive_task.done():
-                logger.debug("[ASR] 取消接收任务...")
-                self._receive_task.cancel()
-                try:
-                    await self._receive_task
-                except asyncio.CancelledError:
-                    logger.debug("[ASR] 接收任务已取消")
-                    pass
-            
-            logger.info(f"[ASR] 流式识别完成，最终结果: '{self._last_text}'")
-            return self._last_text
+            while True:
+                audio_data = await self._audio_queue.get()
+                
+                if audio_data is None:
+                    if last_audio is not None:
+                        request = RequestBuilder.new_audio_only_request(self.seq, last_audio, is_last=True)
+                        await self.conn.send_bytes(request)
+                        logger.info(f"[ASR-WS] → 最后音频包 (seq=-{self.seq}, {len(last_audio)}B)")
+                    else:
+                        request = RequestBuilder.new_audio_only_request(self.seq, b"", is_last=True)
+                        await self.conn.send_bytes(request)
+                        logger.info(f"[ASR-WS] → 空结束标记 (seq=-{self.seq})")
+                    break
+                
+                if last_audio is not None:
+                    request = RequestBuilder.new_audio_only_request(self.seq, last_audio, is_last=False)
+                    await self.conn.send_bytes(request)
+                    self.seq += 1
+                
+                last_audio = audio_data
+                
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
-            logger.error(f"[ASR] 停止流式识别失败: {e}", exc_info=True)
-            return self._last_text
+            logger.error(f"[ASR-WS] ✗ 发送任务异常: {e}")
+    
+    async def _audio_receiver(self):
+        try:
+            async for msg in self.conn:
+                if msg.type == aiohttp.WSMsgType.BINARY:
+                    response = ResponseParser.parse_response(msg.data)
+                    
+                    if response.payload_msg:
+                        result = response.payload_msg.get('result', {})
+                        if isinstance(result, dict):
+                            text = result.get('text', '')
+                            if text:
+                                self._handle_recognition_result(result, response.is_last_package)
+                    
+                    if response.code != 0:
+                        if response.code != 45000081:
+                            logger.error(f"[ASR-WS] ✗ 错误码 {response.code}")
+                        break
+                    
+                    if response.is_last_package:
+                        break
+                        
+                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"[ASR-WS] ✗ 接收任务异常: {e}")
         finally:
-            # 确保状态被重置
-            self._streaming_active = False
-            self._stopping = False
-            
-            # 确保连接被关闭
-            logger.info("[ASR] 关闭WebSocket连接...")
             await self._disconnect()
-            logger.info("[ASR] WebSocket连接已关闭")
     
     def _detect_definite_utterance(self, result: dict, text: str) -> tuple[bool, dict]:
         """检测是否为确定的utterance并提取时间信息
         
-        使用 utterances 中的 definite 字段来判断utterance是否确定。
-        需要 show_utterances=True 才能获取 utterances 数据。
-        definite=True 表示确定的utterance（一个完整的语音识别单元），此时返回 True。
-        
-        如果没有 utterances 数据，返回 False（不允许使用标点符号判断）。
+        基于ASR服务返回的utterances中的definite字段判断。
         
         Returns:
-            tuple[bool, dict]: (是否为确定utterance, 时间信息字典)
-                              时间信息包含: start_time, end_time (单位: 毫秒)
+            tuple[bool, dict]: (是否为确定utterance, 时间信息)
         """
         utterances = result.get('utterances', [])
         
         if not utterances:
-            # 如果没有 utterances 数据，返回 False
-            # 注意：不允许使用标点符号判断，必须依赖 ASR 服务返回的 definite 字段
             return False, {}
         
-        # 检查是否有 definite=True 的 utterance
         for utterance in utterances:
-            if isinstance(utterance, dict):
-                is_definite = utterance.get('definite', False)
-                if is_definite:
-                    # 提取时间信息（尝试多种可能的字段名）
-                    start_time = utterance.get('start_time', utterance.get('start_ms', utterance.get('begin_time', utterance.get('begin', 0))))
-                    end_time = utterance.get('end_time', utterance.get('end_ms', utterance.get('end', 0)))
-                    return True, {
-                        'start_time': start_time,
-                        'end_time': end_time
-                    }
+            if isinstance(utterance, dict) and utterance.get('definite', False):
+                start_time = utterance.get('start_time', utterance.get('start_ms', utterance.get('begin_time', utterance.get('begin', 0))))
+                end_time = utterance.get('end_time', utterance.get('end_ms', utterance.get('end', 0)))
+                return True, {
+                    'start_time': start_time,
+                    'end_time': end_time
+                }
         
-        # 如果没有 definite utterance，返回 False
         return False, {}
     
     def _handle_recognition_result(self, result: dict, is_last_package: bool):
-        """处理识别结果
-        
-        Args:
-            result: ASR识别结果字典
-            is_last_package: 是否为最后一个数据包
-        """
         text = result.get('text', '')
         if not text:
             return
         
-        # 检测是否为确定的utterance（基于ASR服务的definite字段）并提取时间信息
         is_definite_utterance, time_info = self._detect_definite_utterance(result, text)
         
         self._last_text = text
+        self._current_text = text
         
-        # 更新结果文本（用于非流式识别的返回值）
-        self._result_text = text
-        
-        # 🎯 中间层：基于时间间隔判断并累加文本
-        if is_definite_utterance and time_info:
-            current_start = time_info.get('start_time', 0)
-            current_end = time_info.get('end_time', 0)
-            last_end = self._last_utterance_end_time
-            
-            # 计算时间间隔
-            time_gap = current_start - last_end
-            
-            # 判断是否应该累加（根据配置开关）
-            if self._enable_utterance_merge:
-                should_accumulate = (last_end > 0) and (time_gap < self._merge_threshold_ms)
-                
-                if should_accumulate:
-                    # 累加模式：追加到已有文本
-                    self._accumulated_text += text
-                    logger.info(f"[ASR] 累加utterance: '{text}' (间隔={time_gap}ms), 累积文本: '{self._accumulated_text}'")
-                    text_to_send = self._accumulated_text
-                else:
-                    # 新句子：重置累积文本
-                    self._accumulated_text = text
-                    if last_end > 0:
-                        logger.info(f"[ASR] 新utterance: '{text}' (间隔={time_gap}ms)")
-                    else:
-                        logger.info(f"[ASR] 首句utterance: '{text}'")
-                    text_to_send = text
-            else:
-                # 累加修正已禁用，直接输出原始文本
-                logger.info(f"[ASR] utterance: '{text}' (修正已禁用)")
-                text_to_send = text
-            
-            # 更新最后的结束时间
-            self._last_utterance_end_time = current_end
+        if is_definite_utterance:
+            logger.info(f"[ASR] 确定结果: '{text}'")
         elif is_last_package:
             logger.info(f"[ASR] 最终结果: '{text}'")
-            text_to_send = text
-        else:
-            # 中间结果
-            text_to_send = text
         
-        # 调用回调函数（用于流式识别），传递累加后的文本
         if self._on_text_callback:
-            self._on_text_callback(text_to_send, is_definite_utterance, time_info)
+            self._on_text_callback(text, is_definite_utterance, time_info)
     
     def _handle_error_response(self, code: int):
-        """处理错误响应"""
         error_reasons = {
             1001: "参数错误",
             1002: "认证失败",
@@ -794,81 +588,7 @@ class VolcanoASRProvider(BaseASRProvider):
             1008: "音频长度错误",
             1009: "音频采样率错误",
             1010: "音频声道数错误",
-            45000081: "连接超时或音频流中断（可能因暂停录音导致）"
+            45000081: "连接超时或音频流中断"
         }
         reason = error_reasons.get(code, f"未知错误码: {code}")
-        logger.error(f"[ASR] 错误码: {code}, 原因: {reason}")
-        if self._recognition_event:
-            self._recognition_event.set()
-    
-    def _should_continue_streaming(self, is_last_package: bool) -> bool:
-        """判断是否应该继续流式识别"""
-        if not is_last_package:
-            return True
-        
-        if self._stopping:
-            logger.debug("[ASR] 收到停止信号，结束流式识别")
-            if self._recognition_event:
-                self._recognition_event.set()
-            return False
-        
-        logger.debug("[ASR] 当前语音片段结束，继续等待后续音频")
-        return True
-    
-    async def _receive_streaming_results(self):
-        """接收流式识别结果"""
-        try:
-            async for msg in self.conn:
-                if msg.type == aiohttp.WSMsgType.BINARY:
-                    try:
-                        response = ResponseParser.parse_response(msg.data)
-                        
-                        if response.payload_msg:
-                            result = response.payload_msg.get('result', {})
-                            if isinstance(result, dict):
-                                self._handle_recognition_result(result, response.is_last_package)
-                            
-                            if response.code != 0:
-                                # 45000081 错误码处理：
-                                # - 如果是用户主动停止（_stopping=True），这是正常的关闭过程，优雅处理
-                                # - 如果是暂停状态，可能是连接超时，也应该优雅处理
-                                if response.code == 45000081:
-                                    if self._stopping:
-                                        logger.info(f"[ASR] 连接关闭（错误码: {response.code}），用户主动停止，正常结束")
-                                    else:
-                                        logger.warning(f"[ASR] 连接超时（错误码: {response.code}），可能是暂停录音导致，继续等待...")
-                                    # 设置事件以允许正常结束流程
-                                    if self._recognition_event:
-                                        self._recognition_event.set()
-                                    # 如果是停止状态，正常结束；如果是暂停状态，继续等待
-                                    if self._stopping:
-                                        break
-                                    else:
-                                        continue
-                                else:
-                                    self._handle_error_response(response.code)
-                                    break
-                            
-                            if not self._should_continue_streaming(response.is_last_package):
-                                break
-                                
-                    except Exception as e:
-                        logger.error(f"[ASR] 解析流式响应失败: {e}", exc_info=True)
-                        continue
-                        
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.error(f"[ASR] WebSocket错误: {msg.data}")
-                    if self._recognition_event:
-                        self._recognition_event.set()
-                    break
-                    
-                elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    logger.info("[ASR] WebSocket连接已关闭")
-                    if self._recognition_event:
-                        self._recognition_event.set()
-                    break
-                    
-        except Exception as e:
-            logger.error(f"[ASR] 接收流式结果异常: {e}", exc_info=True)
-            if self._recognition_event:
-                self._recognition_event.set()
+        logger.error(f"[ASR-WS] ✗ 错误码 {code}: {reason}")
