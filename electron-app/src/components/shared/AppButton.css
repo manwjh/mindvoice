@@ -47,6 +47,11 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+  box-shadow: none !important;
+}
+
+.app-button:disabled::before {
+  display: none;
 }
 
 /* ==================== 尺寸 ==================== */

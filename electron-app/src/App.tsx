@@ -7,7 +7,6 @@ import { HistoryView } from './components/shared/HistoryView';
 import { SettingsView } from './components/shared/SettingsView';
 import { AboutView } from './components/shared/AboutView';
 import { Toast } from './components/shared/Toast';
-import { ConfirmDialog } from './components/shared/ConfirmDialog';
 import './App.css';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';
@@ -35,10 +34,8 @@ function App() {
   const [appFilter, setAppFilter] = useState<'all' | 'voice-note' | 'voice-chat' | 'voice-zen'>('all');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; duration?: number } | null>(null);
   
-  // 工作状态管理
+  // 工作状态管理（保留用于追踪，但不再用于限制切换）
   const [activeWorkingApp, setActiveWorkingApp] = useState<AppView | null>(null);
-  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
-  const [pendingView, setPendingView] = useState<AppView | null>(null);
   const [isWorkSessionActive, setIsWorkSessionActive] = useState(false);
   
   // VoiceChat 和 VoiceZen 的工作状态（通过回调更新）
@@ -58,29 +55,9 @@ function App() {
   } | null>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 工作状态检查
-  const isAppWorking = (app: AppView): boolean => {
-    switch (app) {
-      case 'voice-note':
-        return asrState === 'recording' || text.trim().length > 0 || isWorkSessionActive;
-      case 'voice-chat':
-        return voiceChatHasContent;
-      case 'voice-zen':
-        return voiceZenHasContent;
-      default:
-        return false;
-    }
-  };
-
   // 开始工作会话
   const startWorkSession = (app: AppView): boolean => {
-    if (activeWorkingApp && activeWorkingApp !== app) {
-      setToast({ 
-        message: `${getAppName(activeWorkingApp)} 正在工作中，请先完成当前工作`, 
-        type: 'warning' 
-      });
-      return false;
-    }
+    // 允许多个app同时工作，不再进行互斥检查
     setActiveWorkingApp(app);
     setIsWorkSessionActive(true);
     return true;
@@ -92,86 +69,10 @@ function App() {
     setIsWorkSessionActive(false);
   };
 
-  // 获取应用名称
-  const getAppName = (app: AppView): string => {
-    const names: Record<AppView, string> = {
-      'voice-note': '语音笔记',
-      'voice-chat': '语音助手',
-      'voice-zen': '禅',
-      'history': '历史记录',
-      'settings': '设置',
-      'about': '关于',
-    };
-    return names[app] || app;
-  };
-
   // 应用切换处理
   const handleViewChange = (newView: AppView) => {
-    // 如果切换到历史或设置，检查是否有工作中的应用
-    if (newView === 'history' || newView === 'settings' || newView === 'about') {
-      if (activeWorkingApp && isAppWorking(activeWorkingApp)) {
-        setPendingView(newView);
-        setShowSwitchConfirm(true);
-        return;
-      }
-      setActiveView(newView);
-      return;
-    }
-    
-    // 如果有应用在工作
-    if (activeWorkingApp && activeWorkingApp !== newView) {
-      if (isAppWorking(activeWorkingApp)) {
-        setPendingView(newView);
-        setShowSwitchConfirm(true);
-        return;
-      }
-    }
-    
-    // 切换到新应用
+    // 直接切换视图，允许多个app同时工作
     setActiveView(newView);
-  };
-
-  // 保存并切换
-  const saveAndSwitch = async () => {
-    if (activeWorkingApp === 'voice-note') {
-      if (text.trim()) {
-        await saveText();
-      }
-    }
-    // VoiceChat 和 VoiceZen 的保存逻辑在各自组件内部处理
-    // 这里只需要重置工作状态
-    
-    endWorkSession();
-    if (pendingView) {
-      setActiveView(pendingView);
-      setPendingView(null);
-    }
-    setShowSwitchConfirm(false);
-  };
-
-  // 放弃并切换
-  const discardAndSwitch = () => {
-    if (activeWorkingApp === 'voice-note') {
-      setText('');
-      localStorage.removeItem('voiceNoteDraft');  // 清除草稿
-    } else if (activeWorkingApp === 'voice-chat') {
-      setVoiceChatHasContent(false);
-    } else if (activeWorkingApp === 'voice-zen') {
-      setVoiceZenHasContent(false);
-    }
-    
-    endWorkSession();
-    if (pendingView) {
-      setActiveView(pendingView);
-      setPendingView(null);
-    }
-    setShowSwitchConfirm(false);
-  };
-
-  // 取消切换
-  const cancelSwitch = () => {
-    setPendingView(null);
-    setShowSwitchConfirm(false);
   };
 
   // 自动保存草稿到 localStorage
@@ -684,7 +585,6 @@ function App() {
       <Sidebar 
         activeView={activeView} 
         onViewChange={handleViewChange}
-        activeWorkingApp={activeWorkingApp}
       />
       
       <div className="app-main">
@@ -753,31 +653,6 @@ function App() {
           onClose={() => setToast(null)}
         />
       )}
-
-      <ConfirmDialog
-        open={showSwitchConfirm}
-        title="工作未完成"
-        message={`您在 ${getAppName(activeWorkingApp || 'voice-note')} 中有未保存的内容，是否保存？`}
-        type="warning"
-        actions={[
-          {
-            label: '保存并切换',
-            variant: 'success',
-            onClick: saveAndSwitch,
-          },
-          {
-            label: '放弃内容',
-            variant: 'danger',
-            onClick: discardAndSwitch,
-          },
-          {
-            label: '取消',
-            variant: 'ghost',
-            onClick: cancelSwitch,
-          },
-        ]}
-        onClose={cancelSwitch}
-      />
     </div>
   );
 }

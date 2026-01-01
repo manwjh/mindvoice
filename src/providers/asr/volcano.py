@@ -397,9 +397,17 @@ class VolcanoASRProvider(BaseASRProvider):
             self.conn = None
             self.session = None
     
+    def _is_conn_available(self) -> bool:
+        """检查连接是否可用"""
+        return self.conn is not None and not self.conn.closed
+    
     async def _send_full_request(self):
         """发送完整客户端请求"""
         try:
+            if not self._is_conn_available():
+                logger.error("[ASR-WS] ✗ 连接不可用，无法发送完整请求")
+                raise ConnectionError("WebSocket连接不可用")
+            
             request = RequestBuilder.new_full_client_request(self.seq, self.enable_nonstream)
             logger.info(f"[ASR-WS] → 发送完整请求 (seq={self.seq}, size={len(request)}B, enable_nonstream={self.enable_nonstream})")
             await self.conn.send_bytes(request)
@@ -484,21 +492,36 @@ class VolcanoASRProvider(BaseASRProvider):
             while True:
                 audio_data = await self._audio_queue.get()
                 
+                # 检查连接是否可用
+                if not self._is_conn_available():
+                    logger.warning("[ASR-WS] ⚠ 连接不可用，停止发送音频数据")
+                    break
+                
                 if audio_data is None:
                     if last_audio is not None:
                         request = RequestBuilder.new_audio_only_request(self.seq, last_audio, is_last=True)
-                        await self.conn.send_bytes(request)
-                        logger.info(f"[ASR-WS] → 最后音频包 (seq=-{self.seq}, {len(last_audio)}B)")
+                        if self._is_conn_available():
+                            await self.conn.send_bytes(request)
+                            logger.info(f"[ASR-WS] → 最后音频包 (seq=-{self.seq}, {len(last_audio)}B)")
+                        else:
+                            logger.warning("[ASR-WS] ⚠ 连接已断开，无法发送最后音频包")
                     else:
                         request = RequestBuilder.new_audio_only_request(self.seq, b"", is_last=True)
-                        await self.conn.send_bytes(request)
-                        logger.info(f"[ASR-WS] → 空结束标记 (seq=-{self.seq})")
+                        if self._is_conn_available():
+                            await self.conn.send_bytes(request)
+                            logger.info(f"[ASR-WS] → 空结束标记 (seq=-{self.seq})")
+                        else:
+                            logger.warning("[ASR-WS] ⚠ 连接已断开，无法发送结束标记")
                     break
                 
                 if last_audio is not None:
                     request = RequestBuilder.new_audio_only_request(self.seq, last_audio, is_last=False)
-                    await self.conn.send_bytes(request)
-                    self.seq += 1
+                    if self._is_conn_available():
+                        await self.conn.send_bytes(request)
+                        self.seq += 1
+                    else:
+                        logger.warning("[ASR-WS] ⚠ 连接已断开，停止发送音频数据")
+                        break
                 
                 last_audio = audio_data
                 
@@ -509,6 +532,10 @@ class VolcanoASRProvider(BaseASRProvider):
     
     async def _audio_receiver(self):
         try:
+            if not self._is_conn_available():
+                logger.warning("[ASR-WS] ⚠ 连接不可用，无法接收消息")
+                return
+            
             async for msg in self.conn:
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     response = ResponseParser.parse_response(msg.data)
@@ -529,6 +556,7 @@ class VolcanoASRProvider(BaseASRProvider):
                         break
                         
                 elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                    logger.warning("[ASR-WS] ⚠ WebSocket连接已关闭或出错")
                     break
         except asyncio.CancelledError:
             pass

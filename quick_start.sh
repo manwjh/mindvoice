@@ -445,6 +445,40 @@ run_app() {
         local retry_count=0
         local api_started=false
         
+        # 检查服务器是否就绪的函数
+        check_api_ready() {
+            local pid=$1
+            local port=$2
+            local host=$3
+            
+            # 首先检查进程是否还在运行
+            if ! kill -0 $pid 2>/dev/null; then
+                return 1  # 进程不存在
+            fi
+            
+            # 等待端口绑定（最多等待 10 秒）
+            local max_wait=10
+            local waited=0
+            while [ $waited -lt $max_wait ]; do
+                if check_port $port $host; then
+                    # 端口被占用，说明服务器已启动
+                    # 进一步检查 HTTP 端点是否可访问（可选，但更可靠）
+                    if command -v curl >/dev/null 2>&1; then
+                        if curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$host:$port/docs" | grep -q "200\|404"; then
+                            return 0  # 服务器就绪
+                        fi
+                    else
+                        # 如果没有 curl，只检查端口
+                        return 0  # 端口已绑定，认为服务器就绪
+                    fi
+                fi
+                sleep 1
+                waited=$((waited + 1))
+            done
+            
+            return 1  # 超时
+        }
+        
         while [ $retry_count -lt $max_retries ] && [ "$api_started" = false ]; do
             # 确保端口未被占用
             if check_port $api_port $api_host; then
@@ -456,31 +490,23 @@ run_app() {
             python "$PROJECT_DIR/api_server.py" --port $api_port --host $api_host &
             API_PID=$!
             
-            # 等待 API 服务器启动
-            sleep 3
-            
-            # 检查 API 服务器是否还在运行
-            if kill -0 $API_PID 2>/dev/null; then
-                # 再次检查端口是否被正确占用（说明服务器启动成功）
-                if check_port $api_port $api_host; then
-                    api_started=true
-                    print_success "API 服务器启动成功（PID: $API_PID）"
-                else
-                    retry_count=$((retry_count + 1))
-                    print_warning "API 服务器进程存在但端口未绑定（尝试 $retry_count/$max_retries）"
-                    kill $API_PID 2>/dev/null || true
-                    sleep 1
-                fi
+            # 等待并检查 API 服务器是否就绪
+            if check_api_ready $API_PID $api_port $api_host; then
+                api_started=true
+                print_success "API 服务器启动成功（PID: $API_PID）"
             else
                 retry_count=$((retry_count + 1))
-                print_warning "API 服务器启动失败（尝试 $retry_count/$max_retries）"
-                
-                # 检查是否是端口问题并清理
-                if check_port $api_port $api_host; then
-                    print_info "检测到端口 $api_port 被占用，清理相关进程..."
-                    cleanup_processes $api_port
-                    sleep 3
+                if kill -0 $API_PID 2>/dev/null; then
+                    print_warning "API 服务器进程存在但未就绪（尝试 $retry_count/$max_retries）"
+                    kill $API_PID 2>/dev/null || true
+                    sleep 2
+                else
+                    print_warning "API 服务器启动失败（尝试 $retry_count/$max_retries）"
                 fi
+                
+                # 清理可能残留的进程
+                cleanup_processes $api_port
+                sleep 2
                 
                 if [ $retry_count -lt $max_retries ]; then
                     print_info "重试启动 API 服务器..."

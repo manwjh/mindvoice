@@ -17,6 +17,8 @@
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+  -webkit-app-region: drag; /* 允许拖拽窗口 */
+  cursor: move !important; /* 四箭头移动光标 */
 }
 
 .sidebar-logo {
@@ -24,11 +26,85 @@
   align-items: center;
   justify-content: center;
   width: 100%;
+  position: relative;
+  cursor: move; /* 继承移动光标，但会被子元素覆盖 */
 }
 
-.logo-icon {
-  font-size: 28px;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+.menu-icon-button {
+  background: transparent;
+  border: none;
+  cursor: pointer !important; /* 菜单按钮显示手型光标 */
+  padding: 8px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+  -webkit-app-region: no-drag; /* 按钮区域不可拖拽 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.menu-icon-button:hover {
+  background: var(--color-bg-sidebar-hover);
+}
+
+.menu-icon {
+  font-size: 24px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 8px;
+  background: var(--color-bg-sidebar);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 140px;
+  z-index: 1000;
+  padding: 4px 0;
+  -webkit-app-region: no-drag;
+}
+
+.window-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  transition: all var(--transition-base);
+}
+
+.window-menu-item:hover {
+  background: var(--color-bg-sidebar-hover);
+  color: var(--color-text-inverse);
+}
+
+.menu-item-icon {
+  font-size: 16px;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
 }
 
 .sidebar-content {

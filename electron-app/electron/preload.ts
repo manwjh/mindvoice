@@ -8,5 +8,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   getApiUrl: () => ipcRenderer.invoke('get-api-url'),
   checkApiServer: () => ipcRenderer.invoke('check-api-server'),
+  // 窗口控制
+  minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
+  maximizeWindow: () => ipcRenderer.invoke('window-maximize'),
+  restoreDefaultSize: () => ipcRenderer.invoke('window-restore-default'),
+  closeWindow: () => ipcRenderer.invoke('window-close'),
+  quitApp: () => ipcRenderer.invoke('app-quit'),
 });
 
