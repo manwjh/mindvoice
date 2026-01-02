@@ -219,7 +219,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
               <h2 className="section-title">音频源</h2>
               <button
                 className="settings-btn-icon settings-btn-refresh-icon"
-                onClick={loadDevices}
+                onClick={() => loadDevices(true)}
                 disabled={loading || !apiConnected}
                 title={loading ? '加载中...' : '刷新设备列表'}
               >
