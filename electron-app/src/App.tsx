@@ -223,16 +223,21 @@ function App() {
         );
         
         if (hasContent) {
-          // 过滤掉 note-info 和 buffer blocks，但保留所有其他 blocks（包括 isAsrWriting 的）
+          // ✅ 修复：保留 note-info 块用于保存，只过滤 buffer blocks
           const allBlocks = blocks.filter((b: any) => 
-            b.type !== 'note-info' && !b.isBufferBlock
+            !b.isBufferBlock
           );
           
-          // 构建文本内容
+          // 构建文本内容（用于 text 字段，不包含 note-info）
           const textContent = allBlocks
+            .filter((b: any) => b.type !== 'note-info')
             .map((b: any) => {
               if (b.isSummary) {
                 return `[SUMMARY_BLOCK_START]${b.content}[SUMMARY_BLOCK_END]`;
+              }
+              // 图片块：添加占位符
+              if (b.type === 'image') {
+                return `[IMAGE: ${b.imageUrl || ''}]${b.imageCaption ? ' ' + b.imageCaption : ''}`;
               }
               return b.content;
             })

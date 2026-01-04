@@ -30,7 +30,7 @@ from src.core.error_codes import SystemError, SystemErrorInfo
 from src.services.voice_service import VoiceService
 from src.services.llm_service import LLMService
 from src.services.knowledge_service import KnowledgeService
-from src.services.export_service import MarkdownExportService
+from src.services.export_service import MarkdownExportService, HtmlExportService
 from src.services.cleanup_service import CleanupService
 from src.utils.audio_recorder import SoundDeviceRecorder
 from src.agents import SummaryAgent, SmartChatAgent
@@ -1012,10 +1012,10 @@ async def export_record_markdown(record_id: str, format: str = 'md'):
     
     Args:
         record_id: 记录 ID
-        format: 导出格式，'md' 或 'zip'
+        format: 导出格式，'md'（Markdown）、'zip'（Markdown+图片打包）或 'html'（单文件HTML）
         
     Returns:
-        Markdown 文件流或 ZIP 文件流
+        Markdown 文件流、ZIP 文件流或 HTML 文件流
     """
     if not voice_service or not voice_service.storage_provider:
         raise HTTPException(status_code=503, detail="存储服务未初始化")
@@ -1069,6 +1069,31 @@ async def export_record_markdown(record_id: str, format: str = 'md'):
                     'Content-Disposition': f"attachment; filename*=UTF-8''{encoded_filename}"
                 }
             )
+        
+        elif format == 'html':
+            # HTML 单文件导出（图片 Base64 嵌入）
+            from src.core.config import Config
+            config = Config()
+            # 获取数据目录
+            data_dir_str = config.get('storage.data_dir', '~/Library/Application Support/MindVoice')
+            data_dir = Path(data_dir_str).expanduser()
+            
+            html_content = HtmlExportService.export_record_to_html(record, data_dir)
+            filename = f"{title}_{timestamp}.html"
+            
+            logger.info(f"[Export] 导出记录 {record_id} 为 HTML: {filename}")
+            
+            from urllib.parse import quote
+            encoded_filename = quote(filename.encode('utf-8'))
+            
+            return Response(
+                content=html_content.encode('utf-8'),
+                media_type='text/html; charset=utf-8',
+                headers={
+                    'Content-Disposition': f"attachment; filename*=UTF-8''{encoded_filename}"
+                }
+            )
+        
         else:
             # Markdown 导出（图片使用 API URL）
             markdown_content = MarkdownExportService.export_record_to_markdown(record)

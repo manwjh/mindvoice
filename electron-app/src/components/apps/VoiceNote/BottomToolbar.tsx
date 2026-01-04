@@ -98,8 +98,8 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             variant="ghost"
             size="medium"
             icon="📋"
-            title="复制文本到剪贴板"
-            ariaLabel="复制文本"
+            title="复制笔记（可选纯文本或富文本）"
+            ariaLabel="复制笔记"
           >
             复制
           </AppButton>
@@ -122,8 +122,8 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
             variant="primary"
             size="medium"
             icon="📦"
-            title="打包导出（包含图片的 ZIP 文件）"
-            ariaLabel="打包导出"
+            title="导出笔记（ZIP 或 HTML 格式）"
+            ariaLabel="导出笔记"
           >
             导出
           </AppButton>

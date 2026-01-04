@@ -4,7 +4,7 @@
   "copyright": "Copyright © 2026 深圳王哥 & AI",
   "directories": {
     "output": "../../release/latest",
-    "buildResources": "../../build/resources"
+    "buildResources": "build"
   },
   "files": [
     "dist/**/*",
@@ -28,7 +28,7 @@
   ],
   "mac": {
     "category": "public.app-category.productivity",
-    "icon": "../../build/resources/icons/icon.icns",
+    "icon": "build/icons/icon.icns",
     "target": [
       {
         "target": "dmg",
@@ -41,8 +41,8 @@
     ],
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
-    "entitlements": "../../build/resources/entitlements/mac.plist",
-    "entitlementsInherit": "../../build/resources/entitlements/mac.inherit.plist",
+    "entitlements": "build/entitlements/mac.plist",
+    "entitlementsInherit": "build/entitlements/mac.inherit.plist",
     "type": "distribution",
     "minimumSystemVersion": "10.14.0",
     "darkModeSupport": true,
@@ -50,7 +50,7 @@
   },
   "dmg": {
     "title": "${productName} ${version}",
-    "icon": "../../build/resources/icons/icon.icns",
+    "icon": "build/icons/icon.icns",
     "window": {
       "width": 540,
       "height": 380

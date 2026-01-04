@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { BlockEditor, NoteInfo, Block } from './BlockEditor';
 import { WelcomeScreen } from './WelcomeScreen';
 import { BottomToolbar } from './BottomToolbar';
+import { ExportFormatDialog, ExportFormat } from './ExportFormatDialog';
+import { CopyFormatDialog, CopyFormat } from './CopyFormatDialog';
 import { AppLayout } from '../../shared/AppLayout';
 import { StatusIndicator } from '../../shared/StatusIndicator';
 import { AppButton, ButtonGroup } from '../../shared/AppButton';
@@ -73,6 +75,8 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageType>('original');
   const [isTranslating, setIsTranslating] = useState(false); // 新增：翻译状态
+  const [showExportDialog, setShowExportDialog] = useState(false); // 新增：显示导出对话框
+  const [showCopyDialog, setShowCopyDialog] = useState(false); // 新增：显示复制格式对话框
   
   // 判断是否显示欢迎界面：工作会话未激活 且 没有正在进行的任务
   const showWelcome = !isWorkSessionActive && currentWorkingRecordId === null;
@@ -346,6 +350,125 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
     }
   }, [currentWorkingRecordId]);
 
+  // 处理导出按钮点击（显示对话框）
+  const handleExportClick = useCallback(() => {
+    if (!currentWorkingRecordId) {
+      alert('请先保存笔记后再导出');
+      return;
+    }
+    setShowExportDialog(true);
+  }, [currentWorkingRecordId]);
+
+  // 处理导出格式确认
+  const handleExportConfirm = useCallback(async (format: ExportFormat) => {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8765';
+    
+    try {
+      if (!currentWorkingRecordId) {
+        alert('请先保存笔记后再导出');
+        return;
+      }
+      
+      const response = await fetch(
+        `${API_BASE_URL}/api/records/${currentWorkingRecordId}/export?format=${format}`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`导出失败: ${response.statusText}`);
+      }
+      
+      // 下载文件
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // 从响应头获取文件名
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const extension = format === 'html' ? 'html' : 'zip';
+      let filename = `笔记_${new Date().getTime()}.${extension}`;
+      if (contentDisposition) {
+        const matches = /filename\*=UTF-8''([^;]+)/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = decodeURIComponent(matches[1]);
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      const formatText = format === 'html' ? 'HTML' : 'ZIP';
+      console.log(`[VoiceNote] ${formatText} 导出成功:`, filename);
+    } catch (error) {
+      console.error('[VoiceNote] 导出失败:', error);
+      alert(`导出失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }, [currentWorkingRecordId]);
+
+  // 复制富文本到剪贴板
+  const handleCopyAsRichText = useCallback(async () => {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8765';
+    
+    try {
+      if (!currentWorkingRecordId) {
+        alert('请先保存笔记后再复制');
+        return;
+      }
+      
+      // 获取 HTML 格式的内容
+      const response = await fetch(
+        `${API_BASE_URL}/api/records/${currentWorkingRecordId}/export?format=html`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`获取内容失败: ${response.statusText}`);
+      }
+      
+      const htmlContent = await response.text();
+      
+      // 使用 Clipboard API 复制富文本
+      const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+      const textBlob = new Blob([htmlContent.replace(/<[^>]*>/g, '')], { type: 'text/plain' });
+      
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': htmlBlob,
+          'text/plain': textBlob,
+        })
+      ]);
+      
+      console.log('[VoiceNote] 富文本已复制到剪贴板');
+      alert('✅ 富文本已复制！可以直接粘贴到论坛了');
+    } catch (error) {
+      console.error('[VoiceNote] 复制富文本失败:', error);
+      alert(`复制失败: ${error instanceof Error ? error.message : '未知错误'}\n\n提示：某些浏览器可能不支持富文本复制`);
+    }
+  }, [currentWorkingRecordId]);
+
+
+  // 处理复制按钮点击（显示格式选择对话框）
+  const handleCopyClick = useCallback(() => {
+    if (!hasContent() && !currentWorkingRecordId) {
+      alert('没有可复制的内容');
+      return;
+    }
+    setShowCopyDialog(true);
+  }, [hasContent, currentWorkingRecordId]);
+
+  // 处理复制格式确认
+  const handleCopyConfirm = useCallback(async (format: CopyFormat) => {
+    if (format === 'plain') {
+      // 纯文本复制（使用原有的 onCopyText）
+      onCopyText();
+    } else {
+      // 富文本复制
+      await handleCopyAsRichText();
+    }
+  }, [onCopyText, handleCopyAsRichText]);
+
 
   // 处理语言切换
   const handleLanguageChange = async (language: LanguageType) => {
@@ -515,16 +638,30 @@ export const VoiceNote: React.FC<VoiceNoteProps> = ({
             asrState={asrState}
             onAsrStart={onAsrStart}
             onAsrStop={onAsrStop}
-            onCopy={onCopyText}
+            onCopy={handleCopyClick}
             hasContent={hasContent()}
             onSummary={handleSummary}
             isSummarizing={isSummarizing}
             apiConnected={apiConnected}
-            onExport={handleExportZip}
+            onExport={handleExportClick}
             currentWorkingRecordId={currentWorkingRecordId}
           />
         </div>
       )}
+      
+      {/* 导出格式选择对话框 */}
+      <ExportFormatDialog
+        isOpen={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        onConfirm={handleExportConfirm}
+      />
+      
+      {/* 复制格式选择对话框 */}
+      <CopyFormatDialog
+        isOpen={showCopyDialog}
+        onClose={() => setShowCopyDialog(false)}
+        onConfirm={handleCopyConfirm}
+      />
     </AppLayout>
   );
 };
