@@ -9,7 +9,7 @@ interface Record {
   created_at: string;
 }
 
-type AppFilter = 'all' | 'voice-note' | 'voice-chat' | 'voice-zen';
+type AppFilter = 'all' | 'voice-note' | 'smart-chat' | 'voice-zen';
 
 interface HistoryViewProps {
   records: Record[];
@@ -26,13 +26,13 @@ interface HistoryViewProps {
 const APP_FILTERS: { value: AppFilter; label: string; icon: string }[] = [
   { value: 'all', label: '全部', icon: '📚' },
   { value: 'voice-note', label: '语音笔记', icon: '📝' },
-  { value: 'voice-chat', label: '语音助手', icon: '💬' },
+  { value: 'smart-chat', label: '智能助手', icon: '💬' },
   { value: 'voice-zen', label: '禅', icon: '🧘' },
 ];
 
 const APP_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
   'voice-note': { label: '语音笔记', icon: '📝', color: '#3b82f6' },
-  'voice-chat': { label: '语音助手', icon: '💬', color: '#8b5cf6' },
+  'smart-chat': { label: '智能助手', icon: '💬', color: '#8b5cf6' },
   'voice-zen': { label: '禅', icon: '🧘', color: '#10b981' },
 };
 

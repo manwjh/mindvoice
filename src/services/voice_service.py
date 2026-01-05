@@ -13,6 +13,15 @@ from ..providers.storage.sqlite import SQLiteStorageProvider
 
 logger = logging.getLogger(__name__)
 
+# 延迟导入消费服务（避免循环依赖）
+try:
+    from .consumption_service import ConsumptionService
+    from .membership_service import MembershipService
+    MEMBERSHIP_AVAILABLE = True
+except ImportError:
+    MEMBERSHIP_AVAILABLE = False
+    logger.warning("[语音服务] 会员服务不可用，消费计量功能将被禁用")
+
 
 class VoiceService:
     """语音服务主类"""
@@ -28,6 +37,11 @@ class VoiceService:
         self.recorder: Optional[AudioRecorder] = None
         self.asr_provider: Optional[VolcanoASRProvider] = None
         self.storage_provider: Optional[SQLiteStorageProvider] = None
+        
+        # 会员服务（用于额度检查和消费记录）
+        self.consumption_service: Optional[ConsumptionService] = None
+        self.membership_service: Optional[MembershipService] = None
+        self._device_id: Optional[str] = None  # 设备ID（从Electron传入）
         
         self._on_text_callback: Optional[Callable[[str, bool, dict], None]] = None
         self._on_state_change_callback: Optional[Callable[[RecordingState], None]] = None
@@ -45,7 +59,91 @@ class VoiceService:
         self._asr_timeout_timer: Optional[threading.Timer] = None
         self._max_connection_duration: int = self.config.get('asr.max_connection_duration', 5400)  # 默认90分钟
         
+        # ASR时间追踪（用于消费记录）
+        self._asr_session_start_time: Optional[int] = None  # 毫秒时间戳
+        
         self._initialize_providers()
+        self._initialize_membership_services()
+    
+    def _initialize_membership_services(self):
+        """初始化会员服务"""
+        if not MEMBERSHIP_AVAILABLE:
+            logger.warning("[语音服务] 会员服务不可用，跳过初始化")
+            return
+        
+        try:
+            # 初始化服务（只传入config，服务内部会自己读取数据库路径）
+            self.membership_service = MembershipService(self.config)
+            self.consumption_service = ConsumptionService(self.config)
+            
+            logger.info("[语音服务] ✅ 会员服务初始化成功")
+        except Exception as e:
+            logger.error(f"[语音服务] 会员服务初始化失败: {e}", exc_info=True)
+            self.membership_service = None
+            self.consumption_service = None
+    
+    def set_device_id(self, device_id: str):
+        """设置设备ID（由主进程调用）"""
+        self._device_id = device_id
+        logger.info(f"[语音服务] 设备ID已设置: {device_id[:16]}...")
+    
+    def _check_asr_quota(self) -> bool:
+        """检查ASR额度是否充足"""
+        if not MEMBERSHIP_AVAILABLE or not self.consumption_service or not self._device_id:
+            # 会员服务不可用时，不限制使用
+            return True
+        
+        try:
+            # 检查ASR额度（预留1分钟 = 60000ms）
+            required_ms = 60000
+            result = self.consumption_service.check_asr_quota(self._device_id, required_ms)
+            
+            if not result['has_quota']:
+                logger.warning(f"[语音服务] ASR额度不足: 已用 {result['used_ms']/1000:.1f}s / {result['quota_ms']/1000:.1f}s")
+                return False
+            
+            logger.info(f"[语音服务] ASR额度检查通过: 已用 {result['used_ms']/1000:.1f}s / {result['quota_ms']/1000:.1f}s")
+            return True
+        except Exception as e:
+            logger.error(f"[语音服务] ASR额度检查失败: {e}", exc_info=True)
+            # 检查失败时允许使用（避免误拦截）
+            return True
+    
+    def _record_asr_consumption(self):
+        """记录ASR消费时长"""
+        if not MEMBERSHIP_AVAILABLE or not self.consumption_service or not self._device_id:
+            return
+        
+        if not self._asr_session_start_time:
+            logger.warning("[语音服务] ASR会话开始时间未记录，无法计算消费")
+            return
+        
+        try:
+            # 计算消费时长（毫秒）
+            end_time = int(time.time() * 1000)
+            duration_ms = end_time - self._asr_session_start_time
+            
+            if duration_ms <= 0:
+                logger.warning(f"[语音服务] ASR消费时长异常: {duration_ms}ms")
+                return
+            
+            # 记录消费
+            self.consumption_service.record_asr_consumption(
+                device_id=self._device_id,
+                duration_ms=duration_ms,
+                start_time=self._asr_session_start_time,
+                end_time=end_time,
+                provider=self.asr_provider.name if self.asr_provider else 'unknown',
+                language=self.config.get('asr.language', 'zh-CN'),
+                session_id=self._current_session_id
+            )
+            
+            logger.info(f"[语音服务] ✅ ASR消费已记录: {duration_ms/1000:.2f}秒")
+            
+            # 重置会话开始时间
+            self._asr_session_start_time = None
+        except Exception as e:
+            logger.error(f"[语音服务] 记录ASR消费失败: {e}", exc_info=True)
     
     def _initialize_providers(self):
         """初始化提供商"""
@@ -156,7 +254,7 @@ class VoiceService:
         开始录音（流式识别）
         
         Args:
-            app_id: 应用ID ('voice-note', 'voice-chat', 'smart-chat' 等)
+            app_id: 应用ID ('voice-note', 'smart-chat', 'voice-zen' 等)
         
         新架构流程：
         1. Audio 先启动（保证缓冲）
@@ -242,8 +340,18 @@ class VoiceService:
             logger.debug("[语音服务] ASR已在运行中或正在关闭，跳过重复启动")
             return
         
+        # 检查ASR额度（如果会员服务可用）
+        if not self._check_asr_quota():
+            logger.warning("[语音服务] ASR额度不足，无法启动")
+            if self._on_error_callback:
+                self._on_error_callback("quota_exceeded", "ASR额度不足，请升级会员或等待下月重置")
+            return
+        
         logger.info("[语音服务] AudioASRGateway 触发：启动ASR")
         language = self.config.get('asr.language', 'zh-CN')
+        
+        # 记录ASR会话开始时间
+        self._asr_session_start_time = int(time.time() * 1000)
         
         try:
             if not self._loop:
@@ -309,6 +417,9 @@ class VoiceService:
             return
         
         logger.info("[语音服务] AudioASRGateway 触发：停止ASR（发送结束标记）")
+        
+        # 记录ASR消费时长
+        self._record_asr_consumption()
         
         try:
             if self.asr_provider and self._loop:
@@ -452,34 +563,10 @@ class VoiceService:
             self.recorder.set_on_audio_chunk_callback(None)
             logger.debug("[语音服务] 已清除音频数据块回调")
             
-            # 等待 ASR 完成最后几个包的识别
-            final_text = None
-            if self._streaming_active and self.asr_provider:
-                logger.info("[语音服务] 等待 ASR 完成最后几个包的识别...")
-                import time
-                
-                # 等待一段时间让 ASR 处理最后的音频包
-                # 通常 ASR 服务需要 2-3 秒来返回最终结果
-                max_wait_time = 5.0  # 最大等待5秒
-                wait_interval = 0.1  # 每100ms检查一次
-                waited_time = 0.0
-                
-                while waited_time < max_wait_time and self._streaming_active:
-                    time.sleep(wait_interval)
-                    waited_time += wait_interval
-                
-                final_text = self._current_text
-                if waited_time >= max_wait_time:
-                    logger.warning(f"[语音服务] 等待ASR完成超时（{max_wait_time}秒），使用当前文本")
-                else:
-                    logger.info(f"[语音服务] ASR已完成，等待时间: {waited_time:.2f}秒")
-                logger.info(f"[语音服务] ✓ 最终文本: '{final_text}'")
-            else:
-                if not self.asr_provider:
-                    logger.info("[语音服务] ASR提供商未初始化，跳过等待")
-                elif not self._streaming_active:
-                    logger.info("[语音服务] ASR未激活，跳过等待")
-                final_text = self._current_text
+            # 获取当前文本（不等待ASR断开）
+            # ASR的断开流程会在后台异步完成，由_on_asr_disconnected回调处理状态重置
+            final_text = self._current_text
+            logger.info(f"[语音服务] ✓ 录音已停止，返回当前文本: '{final_text}'")
             
             self._current_session_id = None
             if final_text:

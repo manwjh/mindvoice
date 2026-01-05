@@ -210,3 +210,90 @@ cleanup:
     AudioDevice: INFO  # 音频设备日志级别
     Network: INFO  # 网络相关日志级别
     Storage: INFO  # 存储相关日志级别
+
+# 会员体系配置
+membership:
+  # 默认会员等级（永久有效）
+  default_tier: free
+  
+  # 免费会员设置
+  free_permanent: true  # 免费会员永久有效
+  
+  # 会员额度配置（单位：ASR为毫秒，LLM为tokens）
+  quotas:
+    free:
+      asr_duration_ms_monthly: 3600000        # 1小时 = 60*60*1000ms
+      llm_tokens_monthly: 100000               # 10万tokens
+    vip:
+      asr_duration_ms_monthly: 36000000       # 10小时
+      llm_tokens_monthly: 1000000              # 100万tokens
+    pro:
+      asr_duration_ms_monthly: 180000000      # 50小时
+      llm_tokens_monthly: 5000000              # 500万tokens
+    pro_plus:
+      asr_duration_ms_monthly: 720000000      # 200小时
+      llm_tokens_monthly: 20000000             # 2000万tokens
+  
+  # 订阅周期配置
+  subscription_periods:
+    - months: 1
+      name: "1个月"
+      discount: 0
+    - months: 3
+      name: "3个月"
+      discount: 0.1    # 9折
+    - months: 6
+      name: "6个月"
+      discount: 0.15   # 85折
+    - months: 12
+      name: "年付"
+      discount: 0.2    # 8折
+  
+  # 订阅周期限制
+  period_limits:
+    min_months: 1
+    max_months: 120    # 最多10年
+  
+  # 过期提醒配置
+  expiration_reminders:
+    days_before: [7, 3, 1]
+  
+  # 自动降级配置
+  auto_downgrade:
+    enabled: true
+    downgrade_to: free
+    default_period: 1
+
+# 用户信息配置
+user_profile:
+  # 头像配置
+  avatar:
+    max_size_mb: 5  # 最大文件大小（MB）
+    allowed_formats: ['png', 'jpg', 'jpeg']  # 允许的格式
+    storage_path: 'avatars'  # 存储目录（相对于data_dir）
+  
+  # 字段限制
+  limits:
+    nickname_max_length: 50
+    bio_max_length: 500
+    email_required: false  # 是否必填
+
+# 模型配置
+model:
+  # 模型来源类型
+  model_source_type: 'vendor'  # 'vendor' 或 'user'
+  
+  # 厂商提供的模型（计入会员额度）
+  vendor_models:
+    enabled: true
+    default_model: 'gpt-4'
+  
+  # 用户自备模型（不计入会员额度）
+  user_models:
+    enabled: true
+    allow_custom: true  # 是否允许用户配置自己的模型
+    supported_providers:
+      - openai
+      - anthropic
+      - deepseek
+      - moonshot

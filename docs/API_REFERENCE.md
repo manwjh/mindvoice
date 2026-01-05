@@ -95,7 +95,7 @@ type IPCMessageType =
 #### 启动录音
 ```
 POST /api/start_recording
-Request: { app_type: "voice-note" | "voice-chat" | "voice-zen" }
+Request: { app_type: "voice-note" | "smart-chat" | "voice-zen" }
 Response: { success: true, message: "开始录音" }
 ```
 
@@ -126,7 +126,7 @@ POST /api/records
 Request: {
   text: string,
   metadata: object,
-  app_type: "voice-note" | "voice-chat" | "voice-zen"
+  app_type: "voice-note" | "smart-chat" | "voice-zen"
 }
 Response: {
   success: true,

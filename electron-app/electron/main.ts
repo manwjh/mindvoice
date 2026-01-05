@@ -924,9 +924,74 @@ app.whenReady().then(async () => {
   setupCSP();
   
   try {
-    // 启动Python API服务器
-    await startPythonServer();
-    console.log('[主进程] Python API服务器已启动');
+    // 初始化设备ID
+    updateSplashStatus('初始化设备ID...', 10);
+    try {
+      const { initializeDeviceId } = await import('./device-id');
+      const deviceInfo = await initializeDeviceId();
+      console.log('[主进程] ✅ 设备ID已初始化:', deviceInfo.deviceId);
+      
+      // 启动Python API服务器
+      await startPythonServer();
+      console.log('[主进程] Python API服务器已启动');
+      
+      // 注册设备到后端
+      updateSplashStatus('注册设备...', 15);
+      try {
+        const response = await fetch(`${API_URL}/api/device/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: deviceInfo.deviceId,
+            machine_id: deviceInfo.machineId,
+            platform: deviceInfo.platform,
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+        
+        if (response.ok) {
+          const result = await response.json() as {
+            success: boolean;
+            data?: { is_new: boolean; membership?: any };
+            error?: string;
+          };
+          if (result.success) {
+            console.log('[主进程] ✅ 设备注册成功');
+            if (result.data?.is_new) {
+              console.log('[主进程] 🎉 欢迎新用户！已自动开通免费永久权限');
+            }
+            
+            // 设置设备ID到语音服务（用于消费记录）
+            try {
+              const setDeviceIdResponse = await fetch(`${API_URL}/api/voice/set-device-id`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: deviceInfo.deviceId }),
+                signal: AbortSignal.timeout(5000),
+              });
+              
+              if (setDeviceIdResponse.ok) {
+                console.log('[主进程] ✅ 设备ID已设置到语音服务');
+              } else {
+                console.warn('[主进程] 设置设备ID到语音服务失败');
+              }
+            } catch (error) {
+              console.warn('[主进程] 设置设备ID到语音服务失败:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[主进程] 设备注册失败（不影响启动）:', error);
+      }
+    } catch (error) {
+      console.error('[主进程] 设备ID初始化失败（不影响启动）:', error);
+    }
+    
+    // 启动Python API服务器（如果上面失败了）
+    if (!pythonProcess) {
+      await startPythonServer();
+      console.log('[主进程] Python API服务器已启动');
+    }
     
     // 更新启动状态
     updateSplashStatus('正在加载应用界面...', 95);
@@ -1010,6 +1075,27 @@ app.on('before-quit', (event) => {
  */
 ipcMain.handle('get-api-url', () => {
   return API_URL;
+});
+
+// 设备ID相关IPC处理器
+ipcMain.handle('get-device-id', async () => {
+  try {
+    const { getDeviceId } = await import('./device-id');
+    return getDeviceId();
+  } catch (error) {
+    console.error('[IPC] 获取设备ID失败:', error);
+    return null;
+  }
+});
+
+ipcMain.handle('get-device-info', async () => {
+  try {
+    const { getDeviceInfo } = await import('./device-id');
+    return getDeviceInfo();
+  } catch (error) {
+    console.error('[IPC] 获取设备信息失败:', error);
+    return null;
+  }
 });
 
 ipcMain.handle('check-api-server', async () => {

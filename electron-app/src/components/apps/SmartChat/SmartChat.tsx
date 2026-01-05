@@ -82,6 +82,11 @@ export const SmartChat = forwardRef<SmartChatHandle, SmartChatProps>(({
     setIsLoading(true);
 
     try {
+      // 获取device_id
+      const deviceIdResponse = await fetch(`${API_BASE_URL}/api/device_id`);
+      const deviceIdData = await deviceIdResponse.json();
+      const deviceId = deviceIdData.device_id;
+      
       const response = await fetch(`${API_BASE_URL}/api/smartchat/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,7 +94,8 @@ export const SmartChat = forwardRef<SmartChatHandle, SmartChatProps>(({
           message: userMessage.content,
           stream: true,
           use_history: true,
-          use_knowledge: useKnowledge
+          use_knowledge: useKnowledge,
+          device_id: deviceId  // 传递device_id用于消费记录
         })
       });
 

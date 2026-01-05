@@ -4,7 +4,7 @@
 
 - **数据库**: SQLite 3
 - **位置**: 由 `config.yml` 中的 `storage.data_dir` + `storage.database` 配置决定
-- **共享机制**: 3个应用（voice-note, voice-chat, voice-zen）共享同一数据库，通过 `app_type` 字段区分
+- **共享机制**: 3个应用（voice-note, smart-chat, voice-zen）共享同一数据库，通过 `app_type` 字段区分
 
 ## records 表（里程碑基准版本）
 
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS records (
 | `id` | TEXT | 记录ID，UUID v4 格式 |
 | `text` | TEXT | 纯文本内容，用于搜索和预览 |
 | `metadata` | TEXT | JSON 格式元数据（blocks、noteInfo 等）|
-| `app_type` | TEXT | 应用类型（voice-note/voice-chat/voice-zen）|
+| `app_type` | TEXT | 应用类型（voice-note/smart-chat/voice-zen）|
 | `created_at` | TIMESTAMP | 创建时间，本地时间格式 `YYYY-MM-DD HH:MM:SS` |
 
 ## metadata 字段结构

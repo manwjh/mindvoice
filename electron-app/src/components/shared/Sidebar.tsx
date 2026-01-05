@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Sidebar.css';
 
-export type AppView = 'voice-note' | 'smart-chat' | 'knowledge-base' | 'voice-zen' | 'history' | 'settings' | 'about';
+export type AppView = 'voice-note' | 'smart-chat' | 'knowledge-base' | 'voice-zen' | 'membership' | 'history' | 'settings' | 'about';
 
 interface SidebarProps {
   activeView: AppView;
@@ -164,6 +164,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
             title="知识库管理"
           >
             <span className="nav-icon" aria-hidden="true">📚</span>
+          </button>
+          
+          <button
+            className={`nav-item ${activeView === 'membership' ? 'active' : ''}`}
+            onClick={() => onViewChange('membership')}
+            aria-label="会员"
+            aria-current={activeView === 'membership' ? 'page' : undefined}
+            title="会员信息与管理"
+          >
+            <span className="nav-icon" aria-hidden="true">👤</span>
           </button>
           
           <button

@@ -2,7 +2,7 @@
 
 ## 概述
 
-`AutoSaveService` 是 MindVoice 项目的统一自动保存服务，负责管理所有应用类型（voice-note、voice-chat、voice-zen）的数据持久化。它提供了多层次的数据保护机制，确保用户数据的安全性和完整性。
+`AutoSaveService` 是 MindVoice 项目的统一自动保存服务，负责管理所有应用类型（voice-note、smart-chat、voice-zen）的数据持久化。它提供了多层次的数据保护机制，确保用户数据的安全性和完整性。
 
 **版本**: 1.0  
 **最后更新**: 2026-01-04  
@@ -108,7 +108,7 @@ AutoSaveService 当前使用 **4种保存触发器**：
            │ implements
     ┌──────┴──────┐
     │             │
-VoiceNoteAdapter  VoiceChatAdapter
+VoiceNoteAdapter  SmartChatAdapter
 ```
 
 ### 2.2 数据流
@@ -116,7 +116,7 @@ VoiceNoteAdapter  VoiceChatAdapter
 ```
 用户操作
    ↓
-前端组件 (VoiceNote, VoiceChat)
+前端组件 (VoiceNote, SmartChat)
    ↓
 App 特定适配器 (VoiceNoteAdapter)
    ↓
@@ -386,7 +386,7 @@ constructor(
 ```
 
 **参数**:
-- `appType`: 应用类型（`'voice-note'` | `'voice-chat'` | `'voice-zen'`）
+- `appType`: 应用类型（`'voice-note'` | `'smart-chat'` | `'voice-zen'`）
 - `adapter`: 应用特定适配器实例
 - `config`: 可选的配置覆盖
 
@@ -1106,7 +1106,7 @@ window.addEventListener('online', () => {
 ### A. 类型定义
 
 ```typescript
-export type AppType = 'voice-note' | 'voice-chat' | 'voice-zen';
+export type AppType = 'voice-note' | 'smart-chat' | 'voice-zen';
 
 export type SaveTrigger = 
   | 'block_confirmed'

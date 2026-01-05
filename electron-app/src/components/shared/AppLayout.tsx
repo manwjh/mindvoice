@@ -16,7 +16,7 @@ export interface AppLayoutProps {
   // 主内容区域
   children: ReactNode;
   
-  // 底部区域（可选，如 VoiceChat 的输入按钮）
+  // 底部区域（可选，如 SmartChat 的输入按钮）
   footer?: ReactNode;
   
   // 自定义类名

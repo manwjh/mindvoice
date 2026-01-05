@@ -32,9 +32,11 @@ from src.services.llm_service import LLMService
 from src.services.knowledge_service import KnowledgeService
 from src.services.export_service import MarkdownExportService, HtmlExportService
 from src.services.cleanup_service import CleanupService
+from src.services.consumption_service import ConsumptionService
 from src.utils.audio_recorder import SoundDeviceRecorder
 from src.agents import SummaryAgent, SmartChatAgent
 from src.agents.translation_agent import TranslationAgent
+from src.api.membership_api import router as membership_router, init_membership_services
 
 logger = get_logger("API")
 
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI):
     setup_voice_service()
     setup_llm_service()
     setup_cleanup_service()
+    setup_membership_services()
     
     # 在异步上下文中启动知识库模型的后台加载
     global knowledge_service
@@ -101,10 +104,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 注册会员体系API路由
+app.include_router(membership_router)
+
 # 全局服务实例
 voice_service: Optional[VoiceService] = None
 llm_service: Optional[LLMService] = None
 knowledge_service: Optional[KnowledgeService] = None
+consumption_service: Optional[ConsumptionService] = None
 summary_agent: Optional[SummaryAgent] = None
 smart_chat_agent: Optional[SmartChatAgent] = None
 translation_agent: Optional[TranslationAgent] = None
@@ -381,6 +388,29 @@ def setup_cleanup_service():
         cleanup_service = None
 
 
+def setup_membership_services():
+    """初始化会员服务"""
+    global config, consumption_service
+    
+    logger.info("[API] 初始化会员服务...")
+    
+    try:
+        if config is None:
+            config = Config()
+        
+        # 初始化会员相关服务
+        init_membership_services(config)
+        
+        # 初始化消费服务（用于记录ASR和LLM消费）
+        consumption_service = ConsumptionService(config)
+        logger.info("[API] 消费服务初始化完成")
+        
+        logger.info("[API] 会员服务初始化完成")
+    except Exception as e:
+        logger.error(f"[API] 会员服务初始化失败: {e}")
+        # 不抛出异常，允许应用继续运行
+
+
 def setup_llm_service():
     """初始化 LLM 服务和知识库服务（知识库延迟加载）"""
     global llm_service, knowledge_service, summary_agent, smart_chat_agent, config
@@ -491,6 +521,11 @@ async def root():
     }
 
 
+class SetDeviceIdRequest(BaseModel):
+    """设置设备ID请求"""
+    device_id: str  # 设备ID
+
+
 @app.get("/api/status", response_model=StatusResponse)
 async def get_status():
     """获取当前状态"""
@@ -507,9 +542,89 @@ async def get_status():
     )
 
 
+# ==================== 全局Device ID管理 ====================
+# 统一管理应用级别的device_id，所有服务共享
+# 这是用户设备的唯一标识（UUID），用于会员系统和消费记录
+# 注意：这不是音频设备ID（audio.device），那是麦克风硬件编号
+device_id: Optional[str] = None
+
+@app.post("/api/voice/set-device-id")
+async def api_set_device_id(request: SetDeviceIdRequest):
+    """设置设备ID（应用级别，所有服务共享）
+    
+    这个端点会：
+    1. 设置全局device_id（供LLM等服务使用）
+    2. 同时设置到voice_service（供ASR消费记录使用）
+    
+    Note: device_id是应用级别的，不区分voice或LLM服务
+    """
+    global device_id
+    
+    try:
+        # 1. 设置全局device_id（核心存储）
+        device_id = request.device_id
+        logger.info(f"[API] 设备ID已设置: {request.device_id[:16]}...")
+        
+        # 2. 同步到voice_service（为了兼容现有代码）
+        if voice_service:
+            voice_service.set_device_id(request.device_id)
+        
+        return {"success": True, "message": "设备ID已设置"}
+    except Exception as e:
+        logger.error(f"[API] 设置设备ID失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/device_id")
+async def get_device_id():
+    """获取应用device_id（所有服务统一使用）
+    
+    返回全局device_id，用于：
+    - ASR消费记录
+    - LLM消费记录
+    - 会员信息查询
+    - 等所有需要标识设备的场景
+    """
+    global device_id
+    
+    if not device_id:
+        raise HTTPException(status_code=404, detail="设备ID未设置，请先初始化应用")
+    
+    return {"success": True, "device_id": device_id}
+
+
+@app.get("/api/consumption/monthly/{device_id}")
+async def get_monthly_consumption(device_id: str, year: int, month: int):
+    """获取指定月份的消费统计
+    
+    Args:
+        device_id: 设备ID
+        year: 年份（查询参数）
+        month: 月份（查询参数）
+    
+    Returns:
+        包含ASR和LLM消费统计的响应
+    """
+    global consumption_service
+    
+    try:
+        if not consumption_service:
+            raise HTTPException(status_code=500, detail="消费服务未初始化")
+        
+        # 获取月度消费统计
+        stats = consumption_service.get_monthly_consumption(device_id, year, month)
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"[API] 获取月度消费失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class StartRecordingRequest(BaseModel):
     """开始录音请求"""
-    app_id: Optional[str] = None  # 应用ID: 'voice-note', 'voice-chat', 'smart-chat'
+    app_id: Optional[str] = None  # 应用ID: 'voice-note', 'smart-chat', 'voice-zen'
 
 
 @app.post("/api/recording/start", response_model=StartRecordingResponse)
@@ -905,7 +1020,7 @@ async def list_records(limit: int = 50, offset: int = 0, app_type: str = None):
     Args:
         limit: 返回记录数量限制
         offset: 偏移量
-        app_type: 应用类型筛选（可选）：'voice-note', 'voice-chat', 'all'
+        app_type: 应用类型筛选（可选）：'voice-note', 'smart-chat', 'voice-zen', 'all'
     """
     if not voice_service or not voice_service.storage_provider:
         error_info = SystemErrorInfo(
@@ -1593,7 +1708,8 @@ async def chat(request: ChatRequest):
             {"role": "user", "content": "你好"}
         ],
         "temperature": 0.7,
-        "max_tokens": 2000
+        "max_tokens": 2000,
+        "device_id": "xxx"  // 可选，用于消费记录
     }
     """
     if not llm_service or not llm_service.is_available():
@@ -1607,6 +1723,22 @@ async def chat(request: ChatRequest):
             error=error_info.to_dict()
         )
     
+    # 检查LLM额度（如果提供了device_id）
+    device_id = getattr(request, 'device_id', None)
+    if device_id and consumption_service:
+        try:
+            # 预估token数（简单估算：每个字符约1个token）
+            estimated_tokens = sum(len(msg.content) for msg in request.messages) * 2
+            quota_check = consumption_service.check_llm_quota(device_id, estimated_tokens)
+            if not quota_check['has_quota']:
+                logger.warning(f"[API] LLM额度不足: device_id={device_id}")
+                return ChatResponse(
+                    success=False,
+                    error={'code': 'QUOTA_EXCEEDED', 'message': 'LLM额度不足，请升级会员或等待下月重置'}
+                )
+        except Exception as e:
+            logger.error(f"[API] LLM额度检查失败: {e}", exc_info=True)
+    
     try:
         # 转换消息格式
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
@@ -1618,6 +1750,22 @@ async def chat(request: ChatRequest):
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
+        
+        # 记录LLM消费（如果提供了device_id）
+        if device_id and consumption_service and llm_service.llm_provider:
+            try:
+                usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                if usage:
+                    consumption_service.record_llm_consumption(
+                        device_id=device_id,
+                        prompt_tokens=usage.get('prompt_tokens', 0),
+                        completion_tokens=usage.get('completion_tokens', 0),
+                        total_tokens=usage.get('total_tokens', 0),
+                        model=llm_service.llm_provider._config.get('model', 'unknown')
+                    )
+                    logger.info(f"[API] ✅ LLM消费已记录: {usage['total_tokens']} tokens")
+            except Exception as e:
+                logger.error(f"[API] 记录LLM消费失败: {e}", exc_info=True)
         
         return ChatResponse(success=True, message=response)
         
@@ -1997,6 +2145,7 @@ class SmartChatRequest(BaseModel):
     knowledge_top_k: int = Field(default=3, description="知识库检索数量")
     temperature: Optional[float] = Field(default=None, description="温度参数")
     max_tokens: Optional[int] = Field(default=None, description="最大token数")
+    device_id: Optional[str] = Field(default=None, description="设备ID（用于消费记录）")
 
 
 class SmartChatHistoryResponse(BaseModel):
@@ -2061,6 +2210,26 @@ async def smart_chat(request: SmartChatRequest):
                     
                     yield "data: [DONE]\n\n"
                     
+                    # 记录LLM消费（如果提供了device_id）
+                    logger.info(f"[SmartChat] 准备记录LLM消费: device_id={request.device_id}, consumption_service={consumption_service is not None}, llm_service={llm_service is not None}")
+                    if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                        try:
+                            usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                            logger.info(f"[SmartChat] 获取usage: {usage}")
+                            if usage:
+                                consumption_service.record_llm_consumption(
+                                    device_id=request.device_id,
+                                    prompt_tokens=usage.get('prompt_tokens', 0),
+                                    completion_tokens=usage.get('completion_tokens', 0),
+                                    total_tokens=usage.get('total_tokens', 0),
+                                    model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                    provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                    model_source='vendor'
+                                )
+                                logger.info(f"[SmartChat] ✅ LLM消费已记录: {usage['total_tokens']} tokens")
+                        except Exception as e:
+                            logger.error(f"[SmartChat] 记录LLM消费失败: {e}", exc_info=True)
+                    
                 except Exception as e:
                     logger.error(f"SmartChat 流式生成失败: {e}", exc_info=True)
                     error_info = SystemErrorInfo(
@@ -2089,6 +2258,24 @@ async def smart_chat(request: SmartChatRequest):
                 knowledge_top_k=request.knowledge_top_k,
                 **kwargs
             )
+            
+            # 记录LLM消费（如果提供了device_id）
+            if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                try:
+                    usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                    if usage:
+                        consumption_service.record_llm_consumption(
+                            device_id=request.device_id,
+                            prompt_tokens=usage.get('prompt_tokens', 0),
+                            completion_tokens=usage.get('completion_tokens', 0),
+                            total_tokens=usage.get('total_tokens', 0),
+                            model=llm_service.llm_provider._config.get('model', 'unknown'),
+                            provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                            model_source='vendor'
+                        )
+                        logger.info(f"[SmartChat] ✅ LLM消费已记录: {usage['total_tokens']} tokens")
+                except Exception as e:
+                    logger.error(f"[SmartChat] 记录LLM消费失败: {e}", exc_info=True)
             
             return ChatResponse(success=True, message=response)
     

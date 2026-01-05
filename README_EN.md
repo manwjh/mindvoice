@@ -28,8 +28,8 @@ Real-time voice-to-text recording tool with block editor and live editing.
 - Pause/resume support
 - One-click save and copy
 
-### 2. 💬 Voice Assistant (VoiceChat)
-Voice conversation with AI, voice input with text responses.
+### 2. 💬 Smart Assistant (SmartChat)
+Intelligent conversation with AI, supports knowledge base retrieval.
 
 **Features**:
 - Voice input to text
@@ -158,7 +158,7 @@ npm run dev
 │   │   ├── components/
 │   │   │   ├── apps/             # Application components
 │   │   │   │   ├── VoiceNote/    # Voice Notes
-│   │   │   │   ├── VoiceChat/    # Voice Assistant
+│   │   │   │   ├── SmartChat/    # Smart Assistant
 │   │   │   │   └── VoiceZen/     # Zen App
 │   │   │   └── shared/           # Shared components
 │   │   ├── utils/                # Utility functions
@@ -189,9 +189,9 @@ npm run dev
 4. Click "Pause" to pause recording
 5. Click "Stop and Save" to save to history
 
-### Voice Assistant (VoiceChat)
-1. Click the 💬 icon in sidebar to enter Voice Assistant
-2. Click the microphone button for voice input
+### Smart Assistant (SmartChat)
+1. Click the 💬 icon in sidebar to enter Smart Assistant
+2. Type or speak your questions, AI will respond intelligently
 3. AI will automatically answer your questions
 4. Supports multi-turn dialogue with context
 

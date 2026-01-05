@@ -24,5 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAllAsrMessageListeners: () => {
     ipcRenderer.removeAllListeners('asr-message');
   },
+  // 会员体系API
+  getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+  getDeviceInfo: () => ipcRenderer.invoke('get-device-info'),
 });
 

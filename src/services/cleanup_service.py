@@ -224,7 +224,8 @@ class CleanupService:
             return referenced
         
         try:
-            conn = sqlite3.connect(str(self.db_path))
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            conn.execute('PRAGMA journal_mode=WAL')
             cursor = conn.cursor()
             cursor.execute('SELECT text, metadata FROM records')
             rows = cursor.fetchall()

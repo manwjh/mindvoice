@@ -1,11 +1,11 @@
 /**
  * 统一的自动保存服务
  * 
- * 支持所有应用类型：voice-note, voice-chat, voice-zen
+ * 支持所有应用类型：voice-note, smart-chat, voice-zen
  * 提供统一的保存触发、临时数据管理、数据库交互
  */
 
-export type AppType = 'voice-note' | 'voice-chat' | 'voice-zen';
+export type AppType = 'voice-note' | 'smart-chat' | 'voice-zen';
 
 export type SaveTrigger = 
   | 'block_confirmed'

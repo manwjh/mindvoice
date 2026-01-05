@@ -4,6 +4,7 @@ import { VoiceNote } from './components/apps/VoiceNote/VoiceNote';
 import { SmartChat } from './components/apps/SmartChat/SmartChat';
 import VoiceZen from './components/apps/VoiceZen/VoiceZen';
 import { KnowledgeBase } from './components/apps/KnowledgeBase/KnowledgeBase';
+import { MembershipContainer } from './components/apps/Membership/MembershipContainer';
 import { HistoryView } from './components/shared/HistoryView';
 import { SettingsView } from './components/shared/SettingsView';
 import { AboutView } from './components/shared/AboutView';
@@ -789,8 +790,8 @@ function App() {
       console.log('[App] 停止请求响应数据:', data);
       
       if (data.success) {
-        console.log('[App] ASR停止成功');
-        setToast({ message: 'ASR已停止', type: 'info' });
+        console.log('[App] ASR停止成功（静默）');
+        // 正常停止时静默，不显示提示
       } else {
         console.error('[App] ASR停止失败:', data.message);
         // 停止失败使用 Toast，不阻塞界面
@@ -1204,6 +1205,10 @@ function App() {
 
         {activeView === 'knowledge-base' && (
           <KnowledgeBase />
+        )}
+
+        {activeView === 'membership' && (
+          <MembershipContainer />
         )}
 
         {activeView === 'history' && (

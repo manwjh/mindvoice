@@ -17,7 +17,7 @@ class SQLiteStorageProvider(BaseStorageProvider):
     """SQLite 存储提供商
     
     特性：
-    - 支持多应用类型（voice-note, voice-chat, voice-zen）
+    - 支持多应用类型（voice-note, smart-chat, voice-zen）
     - 本地时间戳（非 UTC）
     - JSON 元数据存储
     """
@@ -59,7 +59,8 @@ class SQLiteStorageProvider(BaseStorageProvider):
         import logging
         logger = logging.getLogger(__name__)
         
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.execute('PRAGMA journal_mode=WAL')
         cursor = conn.cursor()
         
         cursor.execute('''
@@ -78,7 +79,9 @@ class SQLiteStorageProvider(BaseStorageProvider):
     
     def _get_connection(self):
         """获取数据库连接"""
-        return sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.execute('PRAGMA journal_mode=WAL')
+        return conn
     
     def save_record(self, text: str, metadata: Dict[str, Any]) -> str:
         """创建新记录

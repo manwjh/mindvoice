@@ -3,7 +3,7 @@ LiteLLM 提供商实现
 支持通过 LiteLLM 统一调用多种 LLM 服务
 """
 import logging
-from typing import Dict, Any, AsyncIterator, Union
+from typing import Dict, Any, AsyncIterator, Union, Tuple, Optional
 from .base_llm import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ class LiteLLMProvider(BaseLLMProvider):
     def __init__(self):
         super().__init__()
         self._client = None
+        self._last_usage: Optional[Dict[str, int]] = None  # 最后一次调用的token使用情况
     
     @property
     def name(self) -> str:
@@ -123,6 +124,10 @@ class LiteLLMProvider(BaseLLMProvider):
             if self._config.get('api_key'):
                 request_params['api_key'] = self._config['api_key']
             
+            # 流式模式下请求包含 usage 信息
+            if stream:
+                request_params['stream_options'] = {'include_usage': True}
+            
             logger.info(f"[LiteLLM] 发送请求到模型: {model}, 流式: {stream}")
             
             if stream:
@@ -132,6 +137,20 @@ class LiteLLMProvider(BaseLLMProvider):
                 # 非流式返回
                 response = await litellm.acompletion(**request_params)
                 content = response.choices[0].message.content
+                
+                # 提取token使用信息
+                if hasattr(response, 'usage') and response.usage:
+                    self._last_usage = {
+                        'prompt_tokens': response.usage.prompt_tokens,
+                        'completion_tokens': response.usage.completion_tokens,
+                        'total_tokens': response.usage.total_tokens
+                    }
+                    logger.info(f"[LiteLLM] Token使用: prompt={self._last_usage['prompt_tokens']}, "
+                              f"completion={self._last_usage['completion_tokens']}, "
+                              f"total={self._last_usage['total_tokens']}")
+                else:
+                    self._last_usage = None
+                
                 logger.info(f"[LiteLLM] 收到响应，长度: {len(content)}")
                 return content
                 
@@ -153,14 +172,40 @@ class LiteLLMProvider(BaseLLMProvider):
             
             response = await litellm.acompletion(**request_params)
             
+            # 重置token使用信息
+            self._last_usage = None
+            
             async for chunk in response:
+                # 提取token使用信息（流式响应中通常在最后一个chunk）
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    self._last_usage = {
+                        'prompt_tokens': chunk.usage.prompt_tokens,
+                        'completion_tokens': chunk.usage.completion_tokens,
+                        'total_tokens': chunk.usage.total_tokens
+                    }
+                
                 if chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     yield content
+            
+            # 流式结束后记录token使用
+            if self._last_usage:
+                logger.info(f"[LiteLLM] 流式完成，Token使用: prompt={self._last_usage['prompt_tokens']}, "
+                          f"completion={self._last_usage['completion_tokens']}, "
+                          f"total={self._last_usage['total_tokens']}")
                     
         except Exception as e:
             logger.error(f"[LiteLLM] 流式响应错误: {e}")
             raise
+    
+    def get_last_usage(self) -> Optional[Dict[str, int]]:
+        """获取最后一次调用的token使用情况
+        
+        Returns:
+            包含 prompt_tokens, completion_tokens, total_tokens 的字典，
+            如果没有可用数据则返回 None
+        """
+        return self._last_usage
     
     def is_available(self) -> bool:
         """检查服务是否可用"""

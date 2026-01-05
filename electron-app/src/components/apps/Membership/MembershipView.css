@@ -1,0 +1,178 @@
+/* 会员信息界面样式 */
+
+.membership-view {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.loading,
+.error-message {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+.error-message button {
+  margin-top: 16px;
+  padding: 8px 24px;
+  background: #4a90e2;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* 头部 */
+.membership-header {
+  margin-bottom: 24px;
+}
+
+.membership-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 8px 0;
+}
+
+.tier-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+/* 会员卡片 */
+.membership-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  padding: 24px;
+  color: #fff;
+  margin-bottom: 32px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row .label {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.info-row .value {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.value.permanent {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+.value.status-active {
+  color: #4caf50;
+}
+
+/* 额度部分 */
+.quota-section {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.quota-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 20px 0;
+}
+
+.quota-item {
+  margin-bottom: 24px;
+}
+
+.quota-item:last-child {
+  margin-bottom: 0;
+}
+
+.quota-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.quota-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.quota-value {
+  font-size: 14px;
+  color: #666;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.quota-bar {
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quota-progress {
+  height: 100%;
+  background: #4a90e2;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.reset-info {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+.upgrade-hint {
+  margin-top: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.upgrade-hint p {
+  margin: 0;
+  font-size: 14px;
+  color: #2d3436;
+  font-weight: 500;
+}
+
+.quota-hint {
+  color: #666;
+  font-size: 14px;
+  text-align: center;
+  margin: 0;
+}

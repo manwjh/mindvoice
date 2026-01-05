@@ -171,7 +171,7 @@ src/                  # Python backend
 electron-app/         # Electron frontend
 ├── src/
 │   ├── components/
-│   │   ├── apps/     # Application components (VoiceNote, VoiceChat, VoiceZen)
+│   │   ├── apps/     # Application components (VoiceNote, SmartChat, VoiceZen)
 │   │   └── shared/   # Shared components (Sidebar, Toast, etc.)
 │   ├── utils/        # Frontend utilities
 │   └── version.ts    # Global version configuration
@@ -206,7 +206,7 @@ Please read and follow these project-specific rules:
 
 ### Adding a New Application
 
-The project supports multiple apps (VoiceNote, VoiceChat, VoiceZen). To add a new one:
+The project supports multiple apps (VoiceNote, SmartChat, VoiceZen). To add a new one:
 
 1. **Create app directory**:
    ```bash
@@ -235,7 +235,7 @@ The project supports multiple apps (VoiceNote, VoiceChat, VoiceZen). To add a ne
 
 3. **Update type definitions** in `Sidebar.tsx`:
    ```typescript
-   export type AppView = 'voice-note' | 'voice-chat' | 'voice-zen' | 'your-new-app' | 'history' | 'settings';
+   export type AppView = 'voice-note' | 'smart-chat' | 'voice-zen' | 'your-new-app' | 'history' | 'settings';
    ```
 
 4. **Add to sidebar** and **update App.tsx** routing
@@ -286,7 +286,7 @@ Following the project's testing strategy:
 - **Key modules only**: Write tests for ASR, LLM, WebSocket, and storage
 - **Integration over unit**: Focus on integration tests for key flows
 - **No separate test programs**: Integrate tests within the project structure
-- **Manual testing**: Test all three apps (VoiceNote, VoiceChat, VoiceZen)
+- **Manual testing**: Test all three apps (VoiceNote, SmartChat, VoiceZen)
 - **Cross-platform**: Test on multiple platforms when possible (macOS, Linux, Windows)
 
 ### Testing Checklist
