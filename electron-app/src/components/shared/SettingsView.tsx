@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AppLayout } from './AppLayout';
 import { APP_VERSION, GitHubOwner, GitHubContributor } from '../../version';
+import { BRANDING } from '../../branding.config';
 import './SettingsView.css';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';
@@ -219,7 +220,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
           <div className="settings-content">
           {/* 软件名称和版本号 */}
           <div className="settings-app-info">
-            <div className="settings-app-name">MindVoice 语音桌面助手</div>
+            <div className="settings-app-name">{BRANDING.appName}</div>
             <div className="settings-app-version">
               版本 {APP_VERSION.version} 
               <span className="settings-app-date">({APP_VERSION.releaseDate})</span>

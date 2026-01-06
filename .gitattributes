@@ -1,0 +1,9 @@
+# Git 属性配置
+# 用于控制文件的合并策略和其他行为
+
+# 品牌配置文件：合并时保留当前分支版本（避免冲突）
+electron-app/src/branding.config.ts merge=ours
+
+# 环境变量文件：不合并（各分支独立）
+.env.* merge=ours
+
