@@ -30,5 +30,6 @@ export const BRANDING: BrandingConfig = {
   isEnterprise: false,
   primaryColor: '#667eea',
   logoPath: '/assets/logo.png',
+  // 测试：验证配置系统工作正常
 };
 
