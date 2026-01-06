@@ -367,33 +367,52 @@ function App() {
           
           // 更新或创建记录
           const recordId = voiceNoteAutoSave.getCurrentRecordId();
+          console.log('[EXIT] 保存数据', { 
+            recordId, 
+            hasRecordId: !!recordId,
+            textLength: textContent.length,
+            blockCount: allBlocks.length 
+          });
+          
           if (recordId) {
-            const response = await fetch(`${API_BASE_URL}/api/records/${recordId}`, {
+            const url = `${API_BASE_URL}/api/records/${recordId}`;
+            console.log('[EXIT] 更新记录:', url);
+            
+            const response = await fetch(url, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(saveData),
             });
             
             if (!response.ok) {
-              throw new Error(`更新记录失败: ${response.status}`);
+              const errorText = await response.text();
+              console.error('[EXIT] 更新记录失败', { status: response.status, error: errorText });
+              throw new Error(`更新记录失败 (HTTP ${response.status}): ${errorText}`);
             }
             
             const result = await response.json();
+            console.log('[EXIT] 更新记录结果:', result);
             if (!result.success) {
               throw new Error(result.message || '更新记录失败');
             }
           } else {
-            const response = await fetch(`${API_BASE_URL}/api/text/save`, {
+            const url = `${API_BASE_URL}/api/text/save`;
+            console.log('[EXIT] 创建新记录:', url);
+            
+            const response = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(saveData),
             });
             
             if (!response.ok) {
-              throw new Error(`创建记录失败: ${response.status}`);
+              const errorText = await response.text();
+              console.error('[EXIT] 创建记录失败', { status: response.status, error: errorText });
+              throw new Error(`创建记录失败 (HTTP ${response.status}): ${errorText}`);
             }
             
             const result = await response.json();
+            console.log('[EXIT] 创建记录结果:', result);
             if (!result.success) {
               throw new Error(result.message || '创建记录失败');
             }
@@ -409,7 +428,20 @@ function App() {
         
       } catch (e) {
         console.error('[Exit] 保存失败:', e);
-        const confirmed = window.confirm('保存失败，是否仍然退出？未保存的内容将丢失。');
+        
+        // 构建详细的错误信息
+        let errorMessage = '保存失败';
+        if (e instanceof Error) {
+          errorMessage += `：${e.message}`;
+        } else if (typeof e === 'string') {
+          errorMessage += `：${e}`;
+        }
+        
+        // 显示详细的错误提示
+        const confirmed = window.confirm(
+          `${errorMessage}\n\n是否仍然退出？未保存的内容将丢失。`
+        );
+        
         if (confirmed) {
           endWorkSession();
         }
@@ -427,6 +459,44 @@ function App() {
       const ownerName = asrOwner === 'voice-note' ? '语音笔记' : 
                         asrOwner === 'smart-chat' ? '智能助手' : 
                         asrOwner === 'voice-zen' ? '禅' : '当前应用';
+      
+      // 检查界面状态是否一致（防止异常恢复导致的不确定状态）
+      if (asrOwner && asrOwner !== activeView) {
+        console.warn('[界面检查] ASR所有者与当前界面不一致', {
+          asrOwner,
+          activeView,
+          asrState
+        });
+        
+        // 显示警告并询问是否恢复到正确界面
+        const shouldRecover = window.confirm(
+          `检测到状态异常：${ownerName}正在录音，但当前界面不匹配。\n\n` +
+          `是否自动切换到 ${ownerName} 界面？\n\n` +
+          `点击"确定"切换到正确界面\n` +
+          `点击"取消"停止录音并停留在当前界面`
+        );
+        
+        if (shouldRecover) {
+          // 恢复到正确的界面
+          console.log('[界面恢复] 切换到ASR所有者界面:', asrOwner);
+          setActiveView(asrOwner);
+          setToast({ 
+            message: `已切换到${ownerName}界面`, 
+            type: 'success',
+            duration: 2000
+          });
+        } else {
+          // 用户选择停止录音
+          console.log('[界面恢复] 用户选择停止录音');
+          await stopAsr();
+          setToast({ 
+            message: '已停止录音', 
+            type: 'info',
+            duration: 2000
+          });
+        }
+        return;
+      }
       
       setToast({ 
         message: `${ownerName}正在录音中，请先停止录音再切换界面`, 
@@ -560,13 +630,10 @@ function App() {
             setSystemError(null);
           }
           
-          // 只在首次连接成功时显示 Toast，避免每5秒都显示
-          if (!hasShownConnectedToastRef.current) {
-            setToast({ message: 'API服务器已连接', type: 'success', duration: 2000 });
-            hasShownConnectedToastRef.current = true;
-          }
+          // 连接成功时不显示 Toast，避免干扰用户体验
+          hasShownConnectedToastRef.current = true;
         } else {
-          // 连接断开时重置标志，以便重新连接时可以再次显示 Toast
+          // 连接断开时重置标志
           hasShownConnectedToastRef.current = false;
           
           setSystemError({
@@ -1026,23 +1093,66 @@ function App() {
   };
 
   const copyText = async () => {
-    if (!text) {
-      setToast({ message: '没有可复制的文本', type: 'error' });
+    if (!blockEditorRef.current) {
+      setToast({ message: '没有可复制的内容', type: 'error' });
       return;
     }
+    
     try {
-      await navigator.clipboard.writeText(text);
-      setToast({ message: '文本已复制到剪贴板', type: 'success' });
+      // 获取所有 blocks 和 noteInfo
+      const blocks = blockEditorRef.current.getBlocks();
+      const noteInfo = blockEditorRef.current.getNoteInfo();
+      
+      // 构建包含 note_info 的文本
+      let textToCopy = '';
+      
+      // 添加笔记信息
+      if (noteInfo) {
+        textToCopy += '📋 笔记信息\n';
+        if (noteInfo.title) textToCopy += `📌 标题: ${noteInfo.title}\n`;
+        if (noteInfo.type) textToCopy += `🏷️ 类型: ${noteInfo.type}\n`;
+        if (noteInfo.relatedPeople) textToCopy += `👥 相关人员: ${noteInfo.relatedPeople}\n`;
+        if (noteInfo.location) textToCopy += `📍 地点: ${noteInfo.location}\n`;
+        if (noteInfo.startTime) textToCopy += `⏰ 开始时间: ${noteInfo.startTime}\n`;
+        if (noteInfo.endTime) textToCopy += `⏱️ 结束时间: ${noteInfo.endTime}\n`;
+        textToCopy += '\n---\n\n';
+      }
+      
+      // 添加内容 blocks
+      const contentText = blocks
+        .filter((b: any) => b.type !== 'note-info' && !b.isBufferBlock)
+        .map((b: any) => {
+          if (b.type === 'image') {
+            return `[IMAGE: ${b.imageUrl || ''}]${b.imageCaption ? ' ' + b.imageCaption : ''}`;
+          }
+          return b.content;
+        })
+        .filter((text: string) => text?.trim())
+        .join('\n');
+      
+      textToCopy += contentText;
+      
+      await navigator.clipboard.writeText(textToCopy);
+      setToast({ message: '文本已复制到剪贴板（包含笔记信息）', type: 'success' });
     } catch (e) {
       setToast({ message: `复制失败: ${e}`, type: 'error' });
     }
   };
 
+  // 强制立即保存到数据库
+  const forceSave = async () => {
+    console.log('[强制保存] 开始强制保存到数据库');
+    try {
+      await voiceNoteAutoSave.saveToDatabase('manual', true); // immediate = true
+      console.log('[强制保存] 保存完成');
+    } catch (error) {
+      console.error('[强制保存] 保存失败:', error);
+      throw error;
+    }
+  };
+
   const createNewNote = async () => {
-    console.log('[创建新笔记]', { 
-      currentWorkingRecordId, 
-      hasContent: !!text?.trim() 
-    });
+    console.log('[创建新笔记] 开始');
     
     if (!apiConnected) {
       setSystemError({
@@ -1061,15 +1171,37 @@ function App() {
     }
     
     try {
-      // 如果有当前任务且有内容，先保存
-      if (currentWorkingRecordId && text && text.trim()) {
-        console.log('[创建新笔记] 保存当前笔记', currentWorkingRecordId);
-        await voiceNoteAutoSave.saveToDatabase('manual', true);
-        setToast({ message: '当前笔记已保存', type: 'success' });
+      // 检查 BlockEditor 中是否有实际内容
+      const blocks = blockEditorRef.current?.getBlocks?.() || [];
+      const hasContent = blocks.some((b: any) => 
+        b.type !== 'note-info' && 
+        !b.isBufferBlock && 
+        (b.content?.trim() || b.type === 'image')
+      );
+      
+      console.log('[创建新笔记] 内容检查', { 
+        hasBlocks: blocks.length > 0,
+        hasContent,
+        currentWorkingRecordId 
+      });
+      
+      // 如果有内容，先保存当前笔记
+      if (hasContent) {
+        console.log('[创建新笔记] 检测到内容，先保存当前笔记');
+        
+        // 强制立即保存到数据库
+        await voiceNoteAutoSave.saveToDatabase('create_new_note', true);
+        
+        setToast({ message: '当前笔记已保存', type: 'success', duration: 2000 });
+        
+        // 等待一下，让用户看到保存提示
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        console.log('[创建新笔记] 没有内容，直接开始新笔记');
       }
       
       // 清空状态，开始全新任务
-      console.log('[创建新笔记] 重置状态');
+      console.log('[创建新笔记] 清空显示区域，重置状态');
       setCurrentWorkingRecordId(null);
       voiceNoteAutoSave.reset();
       voiceNoteAutoSave.setCurrentRecordId(null);
@@ -1081,7 +1213,11 @@ function App() {
       setWorkSessionState('working');
       setIsWorkSessionActive(true);
       
-      setToast({ message: '已开始新笔记，可以开始记录了', type: 'success' });
+      setToast({ 
+        message: hasContent ? '已保存并开始新笔记' : '已开始新笔记', 
+        type: 'success',
+        duration: 2000
+      });
       
     } catch (e) {
       console.error('[创建新笔记] 失败:', e);
@@ -1315,6 +1451,7 @@ function App() {
             onAsrStart={handleAsrStart}
             onAsrStop={handleAsrStop}
             onSaveText={saveText}
+            onForceSave={forceSave}
             onCopyText={copyText}
             onCreateNewNote={createNewNote}
             apiConnected={apiConnected}

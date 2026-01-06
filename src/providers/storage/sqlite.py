@@ -100,34 +100,32 @@ class SQLiteStorageProvider(BaseStorageProvider):
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_records_app_type ON records(app_type, user_id, created_at DESC)')
         
         # 2. 全文搜索虚拟表（FTS5）
+        # 注意：不使用 content='records'，使用独立的 FTS5 表以避免触发器问题
         cursor.execute('''
             CREATE VIRTUAL TABLE IF NOT EXISTS records_fts USING fts5(
                 record_id UNINDEXED,
                 text,
-                content='records',
                 tokenize='unicode61 remove_diacritics 2'
             )
         ''')
         
-        # FTS5 同步触发器
+        # FTS5 同步触发器（适用于独立 FTS5 表）
         cursor.execute('''
             CREATE TRIGGER IF NOT EXISTS records_ai AFTER INSERT ON records BEGIN
-                INSERT INTO records_fts(rowid, record_id, text)
-                VALUES (new.rowid, new.id, new.text);
+                INSERT INTO records_fts(record_id, text)
+                VALUES (new.id, new.text);
             END
         ''')
         
         cursor.execute('''
             CREATE TRIGGER IF NOT EXISTS records_au AFTER UPDATE ON records BEGIN
-                UPDATE records_fts 
-                SET text = new.text
-                WHERE rowid = old.rowid;
+                UPDATE records_fts SET text = new.text WHERE record_id = old.id;
             END
         ''')
         
         cursor.execute('''
             CREATE TRIGGER IF NOT EXISTS records_ad AFTER DELETE ON records BEGIN
-                DELETE FROM records_fts WHERE rowid = old.rowid;
+                DELETE FROM records_fts WHERE record_id = old.id;
             END
         ''')
         

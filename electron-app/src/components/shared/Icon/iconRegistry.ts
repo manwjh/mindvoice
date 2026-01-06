@@ -28,6 +28,9 @@ import CopyIcon from '@/assets/icons/ui/copy.svg?react';
 import TranslateIcon from '@/assets/icons/ui/translate.svg?react';
 import ReportIcon from '@/assets/icons/ui/report.svg?react';
 import AppIcon from '@/assets/icons/ui/app-icon.svg?react';
+import LogoutIcon from '@/assets/icons/ui/logoutsvg.svg?react';
+import NotePlusIcon from '@/assets/icons/ui/note-plus.svg?react';
+import PlusCircleIcon from '@/assets/icons/ui/plus-circle.svg?react';
 
 /**
  * 图标映射表
@@ -40,6 +43,9 @@ export const iconMap = {
   'copy': CopyIcon,
   'translate': TranslateIcon,
   'report': ReportIcon,
+  'logout': LogoutIcon,
+  'note-plus': NotePlusIcon,
+  'plus-circle': PlusCircleIcon,
   
   // 应用图标
   'app': AppIcon,

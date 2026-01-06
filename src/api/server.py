@@ -229,19 +229,33 @@ class SimpleChatRequest(BaseModel):
     stream: bool = Field(default=False, description="是否使用流式输出")
 
 
+class SummaryRequest(BaseModel):
+    """小结生成请求模型"""
+    message: str = Field(..., description="待小结的内容")
+    summary_type: Optional[str] = Field(
+        default='meeting', 
+        description="小结类型: meeting(会议纪要), diary(日记随笔), lecture(演讲课程), interview(访谈记录), reading(读书笔记), brainstorm(创意灵感)"
+    )
+    temperature: float = Field(default=0.5, ge=0, le=2, description="温度参数")
+    max_tokens: Optional[int] = Field(default=2500, description="最大生成token数")
+    stream: bool = Field(default=True, description="是否使用流式输出")
+
+
 class TranslateRequest(BaseModel):
     """翻译请求模型"""
     text: str = Field(..., description="待翻译文本")
-    source_lang: str = Field(..., description="源语言代码（zh/en/ja/ko）")
-    target_lang: str = Field(..., description="目标语言代码（zh/en/ja/ko）")
+    language_pair: Optional[str] = Field(None, description="语言对（如 'zh-en'），用于自动检测翻译方向")
+    source_lang: Optional[str] = Field(None, description="源语言代码（zh/en/ja/ko），与language_pair互斥")
+    target_lang: Optional[str] = Field(None, description="目标语言代码（zh/en/ja/ko），与language_pair互斥")
     stream: bool = Field(default=False, description="是否使用流式输出")
 
 
 class BatchTranslateRequest(BaseModel):
     """批量翻译请求模型"""
     texts: list[str] = Field(..., description="待翻译文本列表")
-    source_lang: str = Field(..., description="源语言代码（zh/en/ja/ko）")
-    target_lang: str = Field(..., description="目标语言代码（zh/en/ja/ko）")
+    source_lang: Optional[str] = Field(None, description="源语言代码（zh/en/ja/ko），与language_pair二选一")
+    target_lang: Optional[str] = Field(None, description="目标语言代码（zh/en/ja/ko），与language_pair二选一")
+    language_pair: Optional[str] = Field(None, description="语言对（如 zh-en, en-ja），自动检测翻译方向")
 
 
 class LLMInfoResponse(BaseModel):
@@ -509,6 +523,9 @@ def setup_llm_service():
             except Exception as e:
                 logger.warning(f"[API] 知识库服务初始化失败（可能是依赖未安装）: {e}")
                 knowledge_service = None
+            
+            # 使用 global 声明以修改全局变量
+            global summary_agent, smart_chat_agent, translation_agent
             
             # 初始化 SummaryAgent
             summary_agent = SummaryAgent(llm_service)
@@ -1981,25 +1998,40 @@ async def simple_chat(request: SimpleChatRequest):
 
 
 @app.post("/api/summary/generate")
-async def generate_summary(request: SimpleChatRequest):
-    """生成会议小结（使用专门的SummaryAgent）
+async def generate_summary(request: SummaryRequest):
+    """生成多场景小结（使用专门的SummaryAgent）
     
     请求示例：
     {
-        "message": "会议记录内容...",
-        "stream": true
+        "message": "待小结的内容...",
+        "summary_type": "meeting",  // meeting, diary, lecture, interview, reading, brainstorm
+        "stream": true,
+        "temperature": 0.5,
+        "max_tokens": 2500
     }
     
     注意：
-    - system_prompt将被忽略，使用SummaryAgent内置的提示词
+    - 支持6种场景类型，每种有专门优化的提示词
     - 输入内容会自动过滤掉已有的小结块
     - 支持流式和非流式输出
     """
-    if not summary_agent or not summary_agent.is_available():
+    # 验证 summary_type
+    valid_types = ['meeting', 'diary', 'lecture', 'interview', 'reading', 'brainstorm']
+    summary_type = request.summary_type or 'meeting'
+    if summary_type not in valid_types:
+        error_info = SystemErrorInfo(
+            SystemError.STORAGE_INVALID_CONTENT,
+            details=f"无效的小结类型: {summary_type}",
+            technical_info=f"支持的类型: {', '.join(valid_types)}"
+        )
+        return ChatResponse(success=False, error=error_info.to_dict())
+    
+    # 检查基础 LLM 服务是否可用
+    if not llm_service or not llm_service.is_available():
         error_info = SystemErrorInfo(
             SystemError.LLM_SERVICE_UNAVAILABLE,
-            details="小结服务不可用",
-            technical_info="summary_agent is None or not available"
+            details="LLM服务不可用",
+            technical_info="llm_service is None or not available"
         )
         return ChatResponse(
             success=False,
@@ -2007,13 +2039,27 @@ async def generate_summary(request: SimpleChatRequest):
         )
     
     try:
+        # 根据 summary_type 动态创建 SummaryAgent（使用对应的 variant）
+        from src.agents.summary_agent import SummaryAgent
+        
+        agent_config = {
+            'prompt_variant': summary_type,
+            'temperature': request.temperature,
+            'max_tokens': request.max_tokens
+        }
+        
+        # 创建针对特定场景的 agent
+        current_agent = SummaryAgent(llm_service, config=agent_config)
+        
+        logger.info(f"[API] 生成小结 - 类型: {summary_type}, 内容长度: {len(request.message)}, 流式: {request.stream}")
+        
         # 判断是否使用流式输出
         if request.stream:
             # 返回流式响应
             async def generate():
                 try:
                     # generate_summary 返回 AsyncIterator，直接迭代
-                    async for chunk in await summary_agent.generate_summary(
+                    async for chunk in await current_agent.generate_summary(
                         content=request.message,
                         stream=True,
                         temperature=request.temperature,
@@ -2042,7 +2088,7 @@ async def generate_summary(request: SimpleChatRequest):
             )
         else:
             # 非流式响应
-            summary = await summary_agent.generate_summary(
+            summary = await current_agent.generate_summary(
                 content=request.message,
                 stream=False,
                 temperature=request.temperature,
@@ -2093,6 +2139,10 @@ async def translate_text(request: TranslateRequest):
     """
     翻译单条文本
     
+    支持两种模式：
+    1. 使用 language_pair（推荐）：自动检测翻译方向
+    2. 使用 source_lang + target_lang：固定翻译方向
+    
     支持流式和非流式输出
     """
     if not translation_agent or not translation_agent.is_available():
@@ -2104,52 +2154,91 @@ async def translate_text(request: TranslateRequest):
         return ChatResponse(success=False, error=error_info.to_dict())
     
     try:
-        if request.stream:
-            # 流式翻译
-            async def generate():
-                try:
-                    result = await translation_agent.translate(
-                        text=request.text,
-                        source_lang=request.source_lang,
-                        target_lang=request.target_lang,
-                        stream=True
-                    )
-                    
-                    async for chunk in result:
-                        yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
-                    
-                    yield "data: [DONE]\n\n"
-                    
-                except Exception as e:
-                    logger.error(f"[API] 流式翻译失败: {e}")
+        # 优先使用 language_pair（双向互译）
+        if request.language_pair:
+            logger.info(f"[API] 使用语言对翻译: {request.language_pair}, 文本长度={len(request.text)}")
+            
+            if request.stream:
+                # 流式翻译暂不支持 language_pair
+                raise ValueError("流式翻译暂不支持 language_pair 参数")
+            else:
+                # 非流式翻译
+                result = await translation_agent.translate_with_pair(
+                    text=request.text,
+                    pair_key=request.language_pair,
+                    stream=False
+                )
+                
+                # 检查是否是错误结果（语种不匹配）
+                if isinstance(result, dict) and 'error' in result:
+                    logger.warning(f"[API] 翻译失败（语种不匹配）: {result}")
                     error_info = SystemErrorInfo(
-                        SystemError.LLM_ERROR,
-                        details=f"流式翻译失败: {str(e)}",
-                        technical_info=f"{type(e).__name__}: {str(e)}"
+                        SystemError.TRANSLATION_LANGUAGE_MISMATCH,
+                        details=result.get('message', '未检测到互译语种'),
+                        technical_info=f"detected={result.get('detected_lang')}, expected={result.get('expected_langs')}"
                     )
-                    yield f"data: {json.dumps({'error': error_info.to_dict()}, ensure_ascii=False)}\n\n"
-            
-            return StreamingResponse(
-                generate(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
+                    return {
+                        "success": False,
+                        "error": error_info.to_dict()
+                    }
+                
+                return {
+                    "success": True,
+                    "translation": result
                 }
-            )
-        else:
-            # 非流式翻译
-            result = await translation_agent.translate(
-                text=request.text,
-                source_lang=request.source_lang,
-                target_lang=request.target_lang,
-                stream=False
-            )
+        
+        # 使用固定方向翻译（向后兼容）
+        elif request.source_lang and request.target_lang:
+            logger.info(f"[API] 使用固定方向翻译: {request.source_lang} -> {request.target_lang}")
             
-            return {
-                "success": True,
-                "translation": result
-            }
+            if request.stream:
+                # 流式翻译
+                async def generate():
+                    try:
+                        result = await translation_agent.translate(
+                            text=request.text,
+                            source_lang=request.source_lang,
+                            target_lang=request.target_lang,
+                            stream=True
+                        )
+                        
+                        async for chunk in result:
+                            yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
+                        
+                        yield "data: [DONE]\n\n"
+                        
+                    except Exception as e:
+                        logger.error(f"[API] 流式翻译失败: {e}")
+                        error_info = SystemErrorInfo(
+                            SystemError.LLM_ERROR,
+                            details=f"流式翻译失败: {str(e)}",
+                            technical_info=f"{type(e).__name__}: {str(e)}"
+                        )
+                        yield f"data: {json.dumps({'error': error_info.to_dict()}, ensure_ascii=False)}\n\n"
+                
+                return StreamingResponse(
+                    generate(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                    }
+                )
+            else:
+                # 非流式翻译
+                result = await translation_agent.translate(
+                    text=request.text,
+                    source_lang=request.source_lang,
+                    target_lang=request.target_lang,
+                    stream=False
+                )
+                
+                return {
+                    "success": True,
+                    "translation": result
+                }
+        else:
+            raise ValueError("必须提供 language_pair 或 (source_lang + target_lang)")
     
     except Exception as e:
         logger.error(f"[API] 翻译失败: {e}")
@@ -2166,7 +2255,9 @@ async def batch_translate(request: BatchTranslateRequest):
     """
     批量翻译多条文本
     
-    用于语言切换时一次性翻译所有block
+    支持两种模式：
+    1. 使用 language_pair（推荐）：自动检测每条文本的翻译方向
+    2. 使用 source_lang + target_lang：固定翻译方向
     """
     if not translation_agent or not translation_agent.is_available():
         error_info = SystemErrorInfo(
@@ -2177,11 +2268,23 @@ async def batch_translate(request: BatchTranslateRequest):
         return {"success": False, "error": error_info.to_dict()}
     
     try:
-        results = await translation_agent.batch_translate(
-            texts=request.texts,
-            source_lang=request.source_lang,
-            target_lang=request.target_lang
-        )
+        # 优先使用 language_pair（双向互译）
+        if request.language_pair:
+            logger.info(f"[API] 使用语言对批量翻译: {request.language_pair}, 文本数={len(request.texts)}")
+            results = await translation_agent.batch_translate_with_pair(
+                texts=request.texts,
+                pair_key=request.language_pair
+            )
+        # 否则使用固定方向翻译（向后兼容）
+        elif request.source_lang and request.target_lang:
+            logger.info(f"[API] 使用固定方向批量翻译: {request.source_lang} -> {request.target_lang}")
+            results = await translation_agent.batch_translate(
+                texts=request.texts,
+                source_lang=request.source_lang,
+                target_lang=request.target_lang
+            )
+        else:
+            raise ValueError("必须提供 language_pair 或 (source_lang + target_lang)")
         
         return {
             "success": True,

@@ -44,3 +44,36 @@
   background: var(--color-text-tertiary);
 }
 
+/* 翻译内容样式 */
+.block-translation {
+  padding: var(--space-sm);
+  background: var(--color-bg-secondary);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 0.95em;
+  line-height: 1.6;
+  word-wrap: break-word;
+  opacity: 0.9;
+}
+
+.block-translation-error {
+  border-left-color: var(--color-error);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-error);
+  font-style: italic;
+  opacity: 1;
+}
+
+/* 翻译中动画 */
+@keyframes translating {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.block-translation:has(:first-child:contains("🔄")) {
+  animation: translating 1.5s ease-in-out infinite;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+

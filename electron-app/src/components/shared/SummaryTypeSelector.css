@@ -1,0 +1,199 @@
+/* Summary Type Selector - 小结类型选择器 */
+.summary-type-selector {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.summary-type-selector-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  min-width: 90px;
+  height: 36px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.summary-type-selector-trigger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3e8f 100%);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  transform: translateY(-1px);
+}
+
+.summary-type-selector-trigger:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+}
+
+.summary-type-selector-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #888 0%, #666 100%);
+  box-shadow: none;
+}
+
+.summary-current-icon {
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.summary-current-label {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.summary-arrow {
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.summary-arrow.rotate {
+  transform: rotate(180deg);
+}
+
+.summary-loading {
+  display: inline-flex;
+  align-items: center;
+}
+
+.summary-loading .loading-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background-color: white;
+  border-radius: 50%;
+  animation: summary-pulse 1.4s infinite ease-in-out both;
+}
+
+@keyframes summary-pulse {
+  0%, 80%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Dropdown Menu */
+.summary-dropdown {
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  min-width: 180px;
+  z-index: 10000;
+  animation: summary-dropdown-fade-in 0.15s ease;
+}
+
+@keyframes summary-dropdown-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%) translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-100%) scale(1);
+  }
+}
+
+.summary-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 14px;
+  color: #333;
+  text-align: left;
+}
+
+.summary-option:hover {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+}
+
+.summary-option.selected {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+  font-weight: 600;
+}
+
+.summary-option .option-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.summary-option .option-label {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.summary-option .option-check {
+  font-size: 14px;
+  color: #667eea;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+/* Loading State */
+.summary-type-selector.loading .summary-type-selector-trigger {
+  background: linear-gradient(135deg, #888 0%, #666 100%);
+  cursor: wait;
+}
+
+/* Disabled State */
+.summary-type-selector.disabled .summary-type-selector-trigger {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Open State */
+.summary-type-selector.open .summary-type-selector-trigger {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3e8f 100%);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .summary-type-selector-trigger {
+    min-width: 80px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  
+  .summary-current-label {
+    font-size: 13px;
+  }
+  
+  .summary-dropdown {
+    min-width: 160px;
+  }
+  
+  .summary-option {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+}
+

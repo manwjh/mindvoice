@@ -1,6 +1,6 @@
 {
   "name": "mindvoice",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "MindVoice - AI-powered cross-platform desktop voice assistant",
   "main": "dist-electron/main.js",
   "scripts": {

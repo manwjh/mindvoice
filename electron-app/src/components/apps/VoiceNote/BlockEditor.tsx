@@ -208,18 +208,47 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
   /**
    * 获取要显示的内容（原文或译文）
    */
+  /**
+   * 获取 block 的显示内容（仅在原文模式或无翻译时使用）
+   */
   const getBlockDisplayContent = useCallback((block: Block): string => {
+    return block.content;
+  }, []);
+  
+  /**
+   * 获取 block 的翻译内容
+   */
+  const getBlockTranslation = useCallback((block: Block): { content: string; error?: boolean; message?: string; isTranslating?: boolean } | null => {
     if (selectedLanguage === 'original' || !selectedLanguage) {
-      return block.content;
+      return null;
     }
     
     const translation = block.translations?.[selectedLanguage];
     if (translation) {
-      return translation.content;
+      // 翻译中状态
+      if ((translation as any).isTranslating) {
+        return {
+          content: '🔄 翻译中...',
+          isTranslating: true
+        };
+      }
+      // 翻译错误
+      if (translation.error) {
+        return {
+          content: '',
+          error: true,
+          message: translation.message || '翻译失败'
+        };
+      }
+      // 翻译成功
+      if (translation.content) {
+        return {
+          content: translation.content
+        };
+      }
     }
     
-    // 如果没有翻译，显示原文
-    return block.content;
+    return null;
   }, [selectedLanguage]);
 
   /**
@@ -1761,6 +1790,30 @@ export const BlockEditor = forwardRef<BlockEditorHandle, BlockEditorProps>(({
             style={block.isAsrWriting ? { cursor: 'not-allowed', opacity: 0.7 } : undefined}
             dangerouslySetInnerHTML={{ __html: getBlockDisplayContent(block) }}
           />
+          {/* 翻译内容显示 - 在原文和时间戳之间 */}
+          {(() => {
+            const translation = getBlockTranslation(block);
+            if (translation) {
+              if (translation.error) {
+                // 显示翻译错误
+                return (
+                  <div className="block-translation block-translation-error">
+                    ⚠️ {translation.message}
+                  </div>
+                );
+              } else if (translation.content) {
+                // 显示翻译内容
+                return (
+                  <div 
+                    className="block-translation"
+                    dangerouslySetInnerHTML={{ __html: translation.content }}
+                  />
+                );
+              }
+            }
+            return null;
+          })()}
+          {/* 时间戳始终显示在最底部 */}
           {hasTimeInfo && (
             <TimelineIndicator startTime={block.startTime} endTime={block.endTime} />
           )}

@@ -137,28 +137,89 @@
 /* ==================== 响应式 ==================== */
 @media (max-width: 768px) {
   .app-layout-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
     padding: 12px 16px;
     min-height: auto;
+    height: auto;
+    flex-wrap: wrap;
   }
 
   .header-left {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
+    gap: 12px;
   }
 
   .header-right {
-    width: 100%;
-    justify-content: flex-end;
+    flex-shrink: 0;
+    min-width: 0;
+  }
+
+  .app-info {
+    gap: 8px;
+    min-width: 0;
   }
 
   .app-title {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .app-subtitle {
-    font-size: 12px;
+    font-size: 11px;
+  }
+
+  .status-group {
+    gap: 8px;
+  }
+
+  .app-actions {
+    gap: 8px;
+  }
+}
+
+/* Portrait 模式优化 (450px 宽度) */
+@media (max-width: 500px) {
+  .app-layout-header {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .header-left {
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .app-info {
+    gap: 6px;
+  }
+
+  .app-icon {
+    font-size: 20px;
+  }
+
+  .app-title {
+    font-size: 15px;
+  }
+
+  .app-subtitle {
+    font-size: 10px;
+  }
+
+  .status-group {
+    gap: 6px;
+  }
+
+  .app-actions {
+    gap: 6px;
+  }
+
+  /* 确保 EXIT 按钮在 portrait 模式下不会溢出 */
+  .app-actions .voice-note-exit-button {
+    min-width: 36px;
+    height: 36px;
+    flex-shrink: 0;
   }
 }
 

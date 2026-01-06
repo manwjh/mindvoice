@@ -7,10 +7,11 @@
   background: var(--color-bg-primary);
 }
 
-/* ==================== 顶部工具栏 ==================== */
+/* ==================== 顶部工具栏（只放 EXIT 按钮） ==================== */
 .smart-chat-top-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end; /* 右对齐 EXIT 按钮 */
   gap: 12px;
   padding: 16px 24px;
   margin-bottom: 8px;
@@ -18,37 +19,6 @@
   background: var(--color-bg-primary);
   flex-shrink: 0;
   z-index: 5;
-}
-
-/* ==================== 知识库开关 ==================== */
-.knowledge-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  transition: all var(--transition-base);
-  user-select: none;
-}
-
-.knowledge-toggle:hover {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-dark);
-}
-
-.knowledge-toggle input[type="checkbox"] {
-  cursor: pointer;
-  margin: 0;
-}
-
-.knowledge-toggle span {
-  font-weight: 500;
 }
 
 /* ==================== 消息列表区域 ==================== */
@@ -216,94 +186,226 @@
   }
 }
 
-/* ==================== 底部工具栏 ==================== */
+/* ==================== 底部集中栏（参考 VoiceNote BottomToolbar） ==================== */
 .smart-chat-bottom-toolbar {
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: var(--space-xl) var(--space-2xl);
-  background: var(--color-bg-secondary);
-  border-top: 1px solid var(--color-border);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
-  backdrop-filter: blur(10px);
+  align-items: flex-end;
+  padding: var(--space-xl) var(--space-2xl) var(--space-lg);
+  background: transparent;
   position: relative;
   z-index: 10;
-  min-height: 120px;
+  min-height: 180px;
 }
 
 .smart-chat-bottom-toolbar-content {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
   width: 100%;
   max-width: 1400px;
-  gap: var(--space-lg);
 }
 
-/* ASR 按钮区域（顶部，居中） */
-.smart-chat-bottom-toolbar-asr {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+/* 悬浮圆角容器 */
+.smart-chat-toolbar-container {
   width: 100%;
+  background: var(--color-bg-primary);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-/* 输入和发送按钮区域（底部，水平排列） */
-.smart-chat-bottom-toolbar-actions {
+.smart-chat-toolbar-container:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* ==================== 第一行：可横向滚动的工具栏 ==================== */
+.smart-chat-toolbar-actions-scroll {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--space-md);
   width: 100%;
-  max-width: 800px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox: 隐藏滚动条 */
+  -ms-overflow-style: none; /* IE 和 Edge: 隐藏滚动条 */
+  flex-wrap: nowrap;
 }
 
-/* 输入框包裹容器 */
-.input-wrapper {
-  flex: 1;
-  position: relative;
+/* WebKit 浏览器（Chrome, Safari）: 隐藏滚动条 */
+.smart-chat-toolbar-actions-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* 知识库开关样式 */
+.smart-chat-toolbar-actions-scroll .knowledge-toggle {
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  transition: all var(--transition-base);
+  user-select: none;
 }
 
-.chat-input {
+.smart-chat-toolbar-actions-scroll .knowledge-toggle:hover {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border-dark);
+}
+
+.smart-chat-toolbar-actions-scroll .knowledge-toggle input[type="checkbox"] {
+  cursor: pointer;
+  margin: 0;
+}
+
+.smart-chat-toolbar-actions-scroll .knowledge-toggle span {
+  font-weight: 500;
+}
+
+/* 按钮在滚动工具栏中的样式 - 无底色，紧凑间距 */
+.smart-chat-toolbar-actions-scroll .app-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: transparent !important;
+  border: 1px solid var(--color-border);
+  padding: 6px 12px !important;
+  min-height: 36px;
+  box-shadow: none !important;
+  color: var(--color-text-primary);
+}
+
+/* 覆盖所有变体的背景色 */
+.smart-chat-toolbar-actions-scroll .app-button-primary,
+.smart-chat-toolbar-actions-scroll .app-button-info,
+.smart-chat-toolbar-actions-scroll .app-button-ghost {
+  background: transparent !important;
+  color: var(--color-text-primary) !important;
+}
+
+.smart-chat-toolbar-actions-scroll .app-button:hover:not(:disabled) {
+  background: var(--color-bg-secondary) !important;
+  border-color: var(--color-border-dark);
+  box-shadow: none !important;
+}
+
+.smart-chat-toolbar-actions-scroll .app-button:active:not(:disabled) {
+  background: var(--color-bg-secondary) !important;
+  transform: none;
+  box-shadow: none !important;
+}
+
+.smart-chat-toolbar-actions-scroll .app-button:disabled {
+  opacity: 0.5;
+  background: transparent !important;
+  border-color: var(--color-border);
+}
+
+/* ==================== 第二行：输入框 + 按钮 ==================== */
+.smart-chat-toolbar-floating {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  padding: 14px 16px;
+}
+
+/* 输入框容器 */
+.smart-chat-input-wrapper {
+  flex: 1;
+  min-width: 0; /* 允许 flex 收缩 */
+}
+
+.smart-chat-input {
+  width: 100%;
+  padding: 12px 14px;
   border: 2px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-bg-primary);
+  background: var(--color-bg-secondary);
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.5;
   resize: none;
   transition: all var(--transition-base);
-  min-height: 50px;
-  max-height: 120px;
+  min-height: 48px;
+  max-height: 100px;
   box-sizing: border-box;
 }
 
-.chat-input:focus {
+.smart-chat-input:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
-.chat-input:disabled {
+.smart-chat-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   background: var(--color-bg-tertiary);
 }
 
-.chat-input::placeholder {
+.smart-chat-input.recording {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.smart-chat-input::placeholder {
   color: var(--color-text-tertiary);
 }
 
-/* ASR 按钮样式（复用 BottomToolbar 的样式） */
+/* 分隔线 */
+.smart-chat-toolbar-divider {
+  width: 1px;
+  height: 48px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+/* ASR 按钮区域 */
+.smart-chat-toolbar-asr {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* NEW 按钮 */
+.smart-chat-toolbar-new-button {
+  flex-shrink: 0;
+  min-width: 48px !important;
+  height: 48px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: none !important;
+}
+
+.smart-chat-toolbar-new-button:hover:not(:disabled) {
+  background: var(--color-bg-secondary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+/* ==================== ASR 按钮样式（复用 BottomToolbar） ==================== */
 .asr-button {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -327,8 +429,8 @@
 }
 
 .asr-button svg {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: block;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
   transition: all 0.3s ease;
@@ -381,7 +483,7 @@
 }
 
 .asr-button-stopping .asr-icon {
-  font-size: 28px;
+  font-size: 24px;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
@@ -407,10 +509,6 @@
 
   .smart-chat-bottom-toolbar {
     padding: var(--space-lg) var(--space-xl);
-  }
-  
-  .smart-chat-bottom-toolbar-actions {
-    max-width: 100%;
   }
 }
 
@@ -444,38 +542,46 @@
   }
 
   .smart-chat-bottom-toolbar {
-    padding: var(--space-lg) var(--space-md);
-    min-height: 100px;
+    padding: var(--space-lg) var(--space-md) var(--space-md);
+    min-height: auto;
   }
   
-  .smart-chat-bottom-toolbar-actions {
-    flex-direction: column;
-    gap: var(--space-sm);
-  }
-  
-  .smart-chat-bottom-toolbar-actions .input-wrapper {
-    width: 100%;
+  .smart-chat-toolbar-container {
+    padding: 12px 16px;
+    gap: 12px;
   }
 
-  .chat-input {
-    padding: 12px 14px;
-    font-size: 15px;
-    min-height: 50px;
+  .smart-chat-toolbar-actions-scroll {
+    gap: var(--space-sm);
+  }
+
+  .smart-chat-toolbar-floating {
+    gap: 8px;
+  }
+
+  .smart-chat-input {
+    padding: 10px 12px;
+    font-size: 14px;
+    min-height: 44px;
   }
   
   .asr-button {
-    width: 56px;
-    height: 56px;
+    width: 48px;
+    height: 48px;
   }
 
   .asr-button svg {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
   }
 
-  .knowledge-toggle {
-    font-size: 12px;
-    padding: 4px 10px;
+  .smart-chat-toolbar-new-button {
+    min-width: 44px !important;
+    height: 44px !important;
+  }
+
+  .smart-chat-toolbar-divider {
+    height: 44px;
   }
 }
 
@@ -505,24 +611,53 @@
   }
 
   .smart-chat-bottom-toolbar {
-    padding: var(--space-md) var(--space-sm);
-    min-height: 90px;
+    padding: var(--space-md) var(--space-sm) var(--space-sm);
+    min-height: auto;
   }
   
-  .chat-input {
-    min-height: 45px;
-    font-size: 14px;
-    padding: 10px 12px;
+  .smart-chat-toolbar-container {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  .smart-chat-toolbar-floating {
+    gap: 6px;
+  }
+
+  .smart-chat-input {
+    min-height: 40px;
+    font-size: 13px;
+    padding: 8px 10px;
   }
   
   .asr-button {
-    width: 50px;
-    height: 50px;
+    width: 44px;
+    height: 44px;
   }
 
   .asr-button svg {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .smart-chat-toolbar-new-button {
+    min-width: 40px !important;
+    height: 40px !important;
+  }
+
+  .smart-chat-toolbar-divider {
+    height: 40px;
+  }
+
+  .smart-chat-toolbar-actions-scroll .app-button {
+    font-size: 12px;
+    padding: 5px 10px !important;
+    min-height: 32px;
+  }
+
+  .smart-chat-toolbar-actions-scroll .knowledge-toggle {
+    font-size: 12px;
+    padding: 5px 10px;
   }
 }
 

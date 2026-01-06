@@ -241,6 +241,22 @@ class SystemError:
         "suggestion": "1. 打开设置页面\n2. 配置LLM服务凭证\n3. 保存并重启服务"
     }
     
+    LLM_ERROR = {
+        "code": 4008,
+        "category": ErrorCategory.LLM_SERVICE,
+        "message": "LLM服务错误",
+        "user_message": "AI服务出现错误",
+        "suggestion": "1. 稍后重试\n2. 检查后端日志\n3. 确认服务配置正确"
+    }
+    
+    TRANSLATION_LANGUAGE_MISMATCH = {
+        "code": 4009,
+        "category": ErrorCategory.LLM_SERVICE,
+        "message": "翻译语种不匹配",
+        "user_message": "未检测到互译语种",
+        "suggestion": "1. 确认输入的语言是否正确\n2. 检查选择的翻译语言对\n3. 尝试使用其他翻译选项"
+    }
+    
     # ==================== 存储错误 (5000-5099) ====================
     STORAGE_CONNECTION_FAILED = {
         "code": 5000,

@@ -277,7 +277,7 @@
   border: 1px solid #c7d2fe;
   border-radius: var(--radius-lg);
   margin-bottom: var(--space-lg);
-  padding: var(--space-lg) var(--space-xl);
+  padding: var(--space-sm) var(--space-md);
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
 }
 
@@ -305,9 +305,9 @@
   font-size: var(--font-size-sm);
   line-height: var(--line-height-relaxed);
   color: var(--color-text-secondary);
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   cursor: pointer;
-  min-height: 48px;
+  min-height: auto;
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
 }

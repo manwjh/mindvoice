@@ -1,5 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { AppButton } from '../../shared/AppButton';
+import { Icon } from '../../shared/Icon';
+import { LanguageSelector, LanguageType } from '../../shared/LanguageSelector';
+import { SummaryTypeSelector, SummaryType } from '../../shared/SummaryTypeSelector';
 import './BottomToolbar.css';
 
 // Inline SVG icons
@@ -33,6 +36,16 @@ interface BottomToolbarProps {
   // 导出功能
   onExport?: () => void;
   currentWorkingRecordId?: string | null;
+  // 新增
+  onCreateNewNote?: () => void;
+  isWorkSessionActive?: boolean;
+  // 语言选择器相关
+  selectedLanguage?: LanguageType;
+  onLanguageChange?: (language: LanguageType) => void;
+  isTranslating?: boolean;
+  // 小结类型选择器相关
+  selectedSummaryType?: SummaryType;
+  onSummaryTypeChange?: (type: SummaryType) => void;
 }
 
 export const BottomToolbar: React.FC<BottomToolbarProps> = ({
@@ -46,87 +59,122 @@ export const BottomToolbar: React.FC<BottomToolbarProps> = ({
   apiConnected,
   onExport,
   currentWorkingRecordId,
+  onCreateNewNote,
+  isWorkSessionActive,
+  selectedLanguage = 'original',
+  onLanguageChange,
+  isTranslating = false,
+  selectedSummaryType = 'meeting',
+  onSummaryTypeChange,
 }) => {
   return (
     <div className="bottom-toolbar">
       <div className="bottom-toolbar-content">
-        {/* 顶部：ASR控制按钮（居中，突出显示） */}
-        <div className="bottom-toolbar-asr">
-          {apiConnected && (
-            <>
-              {asrState === 'idle' && onAsrStart && (
-                <button
-                  className="asr-button asr-button-start"
-                  onClick={onAsrStart}
-                  title="启动语音识别 (开始记录)"
-                  aria-label="启动语音识别"
-                >
-                  <MicBwIcon />
-                </button>
+        {/* 合并的悬浮圆角容器：工具栏 + 录音按钮 + NEW 按钮 */}
+        <div className="bottom-toolbar-container bottom-toolbar-container-bottom">
+          {/* 第一行：工具栏（语言选择器、复制、小结、导出） */}
+          <div className="bottom-toolbar-actions-scroll">
+            {onLanguageChange && (
+              <LanguageSelector
+                value={selectedLanguage}
+                onChange={onLanguageChange}
+                disabled={false}
+                loading={isTranslating}
+              />
+            )}
+            
+            <AppButton
+              onClick={onCopy}
+              disabled={false}
+              variant="ghost"
+              size="medium"
+              icon="📋"
+              title="复制笔记（note_info + blocks，可选纯文本或富文本）"
+              ariaLabel="复制笔记"
+            >
+              复制
+            </AppButton>
+            
+            {onSummaryTypeChange && (
+              <SummaryTypeSelector
+                value={selectedSummaryType}
+                onChange={onSummaryTypeChange}
+                disabled={asrState !== 'idle' || !hasContent || isSummarizing}
+                loading={isSummarizing}
+                onTrigger={onSummary}
+              />
+            )}
+
+            <AppButton
+              onClick={onExport}
+              disabled={asrState !== 'idle'}
+              variant="primary"
+              size="medium"
+              icon="📦"
+              title="导出笔记（note_info + blocks，ZIP 或 HTML 格式）"
+              ariaLabel="导出笔记"
+            >
+              导出
+            </AppButton>
+          </div>
+
+          {/* 第二行：录音按钮居中，NEW 按钮右侧 */}
+          <div className="bottom-toolbar-floating">
+            {/* 录音按钮（居中） */}
+            <div className="bottom-toolbar-asr">
+              {apiConnected && (
+                <>
+                  {asrState === 'idle' && onAsrStart && (
+                    <button
+                      className="asr-button asr-button-start"
+                      onClick={onAsrStart}
+                      title="启动语音识别 (开始记录)"
+                      aria-label="启动语音识别"
+                    >
+                      <MicBwIcon />
+                    </button>
+                  )}
+
+                  {asrState === 'recording' && onAsrStop && (
+                    <button
+                      className="asr-button asr-button-stop"
+                      onClick={onAsrStop}
+                      title="停止语音识别"
+                      aria-label="停止语音识别"
+                    >
+                      <MicWbIcon />
+                    </button>
+                  )}
+
+                  {asrState === 'stopping' && (
+                    <button
+                      className="asr-button asr-button-stopping"
+                      disabled
+                      title="正在停止语音识别..."
+                      aria-label="正在停止语音识别"
+                    >
+                      <span className="asr-icon">⏳</span>
+                    </button>
+                  )}
+                </>
               )}
+            </div>
 
-              {asrState === 'recording' && onAsrStop && (
-                <button
-                  className="asr-button asr-button-stop"
-                  onClick={onAsrStop}
-                  title="停止语音识别"
-                  aria-label="停止语音识别"
-                >
-                  <MicWbIcon />
-                </button>
-              )}
-
-              {asrState === 'stopping' && (
-                <button
-                  className="asr-button asr-button-stopping"
-                  disabled
-                  title="正在停止语音识别..."
-                  aria-label="正在停止语音识别"
-                >
-                  <span className="asr-icon">⏳</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* 底部：内容操作按钮 */}
-        <div className="bottom-toolbar-actions">
-          <AppButton
-            onClick={onCopy}
-            disabled={!hasContent}
-            variant="ghost"
-            size="medium"
-            icon="📋"
-            title="复制笔记（可选纯文本或富文本）"
-            ariaLabel="复制笔记"
-          >
-            复制
-          </AppButton>
-          
-          <AppButton
-            onClick={onSummary}
-            disabled={asrState !== 'idle' || !hasContent || isSummarizing}
-            variant="info"
-            size="medium"
-            icon={isSummarizing ? "⏳" : "📊"}
-            title={isSummarizing ? "正在生成小结..." : "使用AI生成内容小结"}
-            ariaLabel={isSummarizing ? "正在生成小结" : "生成小结"}
-          >
-            {isSummarizing ? '生成中' : '小结'}
-          </AppButton>
-
-          <AppButton
-            onClick={onExport}
-            disabled={!currentWorkingRecordId || asrState !== 'idle'}
-            variant="primary"
-            size="medium"
-            icon="📦"
-            title="导出笔记（ZIP 或 HTML 格式）"
-            ariaLabel="导出笔记"
-          >
-            导出
-          </AppButton>
+            {/* NEW 按钮（右侧） */}
+            {isWorkSessionActive && onCreateNewNote && (
+              <AppButton
+                onClick={onCreateNewNote}
+                disabled={asrState !== 'idle'}
+                variant="ghost"
+                size="medium"
+                title={hasContent ? "保存当前笔记并创建新笔记" : "创建新笔记"}
+                ariaLabel="新笔记"
+                className="bottom-toolbar-new-button"
+              >
+                <Icon name="plus-circle" size={20} />
+              </AppButton>
+            )}
+          </div>
         </div>
       </div>
     </div>

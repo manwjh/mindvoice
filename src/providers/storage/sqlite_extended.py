@@ -169,13 +169,13 @@ class SQLiteExtended:
             where_clause = ' AND '.join(where_conditions)
             params.extend([limit, offset])
             
-            # FTS5 搜索
+            # FTS5 搜索（使用 record_id 关联，因为 FTS 表是独立的）
             cursor.execute(f'''
                 SELECT r.id, r.text, r.metadata, r.app_type, r.user_id, r.device_id,
                        r.is_starred, r.is_archived, r.created_at, r.updated_at,
                        f.rank
                 FROM records r
-                INNER JOIN records_fts f ON r.rowid = f.rowid
+                INNER JOIN records_fts f ON r.id = f.record_id
                 WHERE records_fts MATCH ? AND {where_clause}
                 ORDER BY f.rank
                 LIMIT ? OFFSET ?

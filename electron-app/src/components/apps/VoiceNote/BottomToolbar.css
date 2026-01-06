@@ -1,42 +1,139 @@
 .bottom-toolbar {
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: var(--space-xl) var(--space-2xl);
-  background: var(--color-bg-secondary);
-  border-top: 1px solid var(--color-border);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
-  backdrop-filter: blur(10px);
+  align-items: flex-end;
+  padding: var(--space-xl) var(--space-2xl) var(--space-lg);
+  background: transparent;
   position: relative;
   z-index: 10;
-  min-height: 120px;
+  min-height: 180px;
 }
 
 .bottom-toolbar-content {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
   width: 100%;
   max-width: 1400px;
-  gap: var(--space-lg);
 }
 
-/* ASR 按钮区域（顶部，居中） */
+/* ==================== 悬浮圆角容器通用样式 ==================== */
+.bottom-toolbar-container {
+  width: 100%;
+  background: var(--color-bg-primary);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bottom-toolbar-container:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* 合并的容器：包含工具栏和录音按钮 */
+.bottom-toolbar-container-bottom {
+  padding: 16px 20px;
+  min-height: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ==================== 第一行：可横向滚动的工具栏 ==================== */
+.bottom-toolbar-actions-scroll {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox: 隐藏滚动条 */
+  -ms-overflow-style: none; /* IE 和 Edge: 隐藏滚动条 */
+  flex-wrap: nowrap;
+}
+
+/* WebKit 浏览器（Chrome, Safari）: 隐藏滚动条 */
+.bottom-toolbar-actions-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* 语言选择器在滚动工具栏中的样式 */
+.bottom-toolbar-actions-scroll .language-selector {
+  flex-shrink: 0;
+}
+
+/* 按钮在滚动工具栏中的样式 - 无底色，紧凑间距 */
+.bottom-toolbar-actions-scroll .app-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: transparent !important;
+  border: 1px solid var(--color-border);
+  padding: 6px 12px !important;
+  min-height: 36px;
+  box-shadow: none !important;
+  color: var(--color-text-primary);
+}
+
+/* 覆盖所有变体的背景色 */
+.bottom-toolbar-actions-scroll .app-button-primary,
+.bottom-toolbar-actions-scroll .app-button-info,
+.bottom-toolbar-actions-scroll .app-button-ghost {
+  background: transparent !important;
+  color: var(--color-text-primary) !important;
+}
+
+.bottom-toolbar-actions-scroll .app-button:hover:not(:disabled) {
+  background: var(--color-bg-secondary) !important;
+  border-color: var(--color-border-dark);
+  box-shadow: none !important;
+}
+
+.bottom-toolbar-actions-scroll .app-button:active:not(:disabled) {
+  background: var(--color-bg-secondary) !important;
+  transform: none;
+  box-shadow: none !important;
+}
+
+.bottom-toolbar-actions-scroll .app-button:disabled {
+  opacity: 0.5;
+  background: transparent !important;
+  border-color: var(--color-border);
+}
+
+/* ==================== 第二行：悬浮窗口（录音按钮居中，NEW 按钮） ==================== */
+.bottom-toolbar-floating {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+/* ASR 按钮区域（居中） */
 .bottom-toolbar-asr {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 100%;
+  flex: 1;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-/* 操作按钮区域（底部，水平排列） */
-.bottom-toolbar-actions {
+/* NEW 按钮样式 */
+.bottom-toolbar-new-button {
+  flex: 0 0 auto;
+  min-width: 48px;
+  height: 48px;
+  border-radius: 50%;
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0;
+  margin-left: auto; /* 靠右对齐 */
 }
 
 /* ==================== 圆形 ASR 按钮样式 ==================== */
@@ -74,7 +171,7 @@
   transition: all 0.3s ease;
 }
 
-/* 启动按钮（透明背景 + 黑色轮廓麦克风） */
+/* 启动按钮（透明背景 + 绿色轮廓麦克风） */
 .asr-button-start {
   background: transparent;
   box-shadow: none;
@@ -134,25 +231,35 @@
   }
 }
 
-/* 响应式：在小屏幕上调整布局 */
+/* ==================== 响应式设计 ==================== */
 @media (max-width: 768px) {
   .bottom-toolbar {
-    padding: var(--space-lg) var(--space-md);
-    min-height: 100px;
+    padding: var(--space-lg) var(--space-md) var(--space-md);
+    min-height: auto;
   }
   
-  .bottom-toolbar-content {
-    gap: var(--space-md);
+  .bottom-toolbar-container-bottom {
+    padding: 12px 16px;
+    gap: 12px;
   }
 
-  .bottom-toolbar-actions {
-    width: 100%;
+  .bottom-toolbar-actions-scroll {
     gap: var(--space-sm);
   }
 
-  .bottom-toolbar-actions .app-button {
-    flex: 1;
-    min-width: 0;
+  .bottom-toolbar-actions-scroll .app-button {
+    flex: 0 0 auto;
+    min-width: 80px;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .bottom-toolbar-actions-scroll .language-selector {
+    flex: 0 0 auto;
+  }
+
+  .bottom-toolbar-floating {
+    gap: 16px;
   }
 
   .asr-button {
@@ -163,5 +270,10 @@
   .asr-button svg {
     width: 36px;
     height: 36px;
+  }
+
+  .bottom-toolbar-new-button {
+    min-width: 44px;
+    height: 44px;
   }
 }

@@ -3,5 +3,5 @@
  */
 export { Icon, type IconProps } from './Icon';
 export { iconMap, getAvailableIcons, hasIcon, type IconName } from './iconRegistry';
-export default Icon;
+export { Icon as default } from './Icon';
 
