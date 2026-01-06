@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppLayout } from './AppLayout';
-import { APP_VERSION } from '../../version';
+import { APP_VERSION, GitHubOwner, GitHubContributor } from '../../version';
 import './SettingsView.css';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';
@@ -25,20 +25,6 @@ interface SettingsViewProps {
   apiConnected: boolean;
 }
 
-interface GitHubContributor {
-  login: string;
-  avatar_url: string;
-  html_url: string;
-  contributions: number;
-}
-
-interface GitHubOwner {
-  login: string;
-  avatar_url: string;
-  html_url: string;
-  type: string;
-}
-
 export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [currentDevice, setCurrentDevice] = useState<number | null>(null);
@@ -60,11 +46,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
   const [asrLoading, setAsrLoading] = useState(false);
   const [asrSaving, setAsrSaving] = useState(false);
 
-  // GitHub 相关信息状态
-  const [githubOwner, setGithubOwner] = useState<GitHubOwner | null>(null);
-  const [githubContributors, setGithubContributors] = useState<GitHubContributor[]>([]);
-  const [githubLoading, setGithubLoading] = useState(false);
-  const [githubError, setGithubError] = useState<string | null>(null);
+  // ==================== GitHub 版本快照信息 =====================
+  // 
+  // 设计说明：
+  // - 直接使用构建时编译到应用中的版本快照信息，无需运行时网络请求
+  // - 这些信息在构建时通过 sync-github-snapshot.js 从 GitHub API 同步
+  // - 代表该版本发布时刻的贡献者状态，是该版本的"快照"
+  // - 保证离线可用性和快速加载
+  const githubOwner = APP_VERSION.github.snapshot?.owner || null;
+  const githubContributors = APP_VERSION.github.snapshot?.contributors || [];
 
   // 加载音频设备列表
   const loadDevices = async (forceRefresh: boolean = false) => {
@@ -211,66 +201,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
     }
   };
 
-  // 从 GitHub API 获取仓库信息
-  const loadGitHubInfo = async () => {
-    const repository = APP_VERSION.github.repository;
-    if (!repository) {
-      setGithubError('未配置 GitHub 仓库地址');
-      return;
-    }
-
-    setGithubLoading(true);
-    setGithubError(null);
-
-    try {
-      // 获取仓库信息（包含 owner）
-      const repoResponse = await fetch(`https://api.github.com/repos/${repository}`);
-      if (!repoResponse.ok) {
-        throw new Error(`获取仓库信息失败: ${repoResponse.statusText}`);
-      }
-      const repoData = await repoResponse.json();
-      
-      setGithubOwner({
-        login: repoData.owner.login,
-        avatar_url: repoData.owner.avatar_url,
-        html_url: repoData.owner.html_url,
-        type: repoData.owner.type
-      });
-
-      // 获取贡献者列表
-      const contributorsResponse = await fetch(`https://api.github.com/repos/${repository}/contributors?per_page=100`);
-      if (!contributorsResponse.ok) {
-        throw new Error(`获取贡献者列表失败: ${contributorsResponse.statusText}`);
-      }
-      const contributorsData = await contributorsResponse.json();
-      
-      // 过滤掉机器人贡献者，并按贡献数排序
-      const contributors = contributorsData
-        .filter((c: any) => c.type === 'User') // 只显示用户，不显示机器人
-        .map((c: any) => ({
-          login: c.login,
-          avatar_url: c.avatar_url,
-          html_url: c.html_url,
-          contributions: c.contributions
-        }))
-        .sort((a: GitHubContributor, b: GitHubContributor) => b.contributions - a.contributions);
-      
-      setGithubContributors(contributors);
-    } catch (error) {
-      console.error('[SettingsView] 获取 GitHub 信息失败:', error);
-      setGithubError(error instanceof Error ? error.message : '获取 GitHub 信息失败');
-    } finally {
-      setGithubLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (apiConnected) {
       loadDevices();
       loadASRConfig();
     }
-    // 加载 GitHub 信息（不依赖 apiConnected）
-    loadGitHubInfo();
   }, [apiConnected]);
 
   return (
@@ -573,7 +508,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
               {/* GitHub 仓库地址 */}
               {APP_VERSION.github.repository && (
                 <div className="settings-about-github">
-                  <div className="settings-about-github-label">GitHub 仓库：</div>
+                  <div className="settings-about-github-label">GitHub Repository:</div>
                   <a 
                     href={APP_VERSION.github.url || `https://github.com/${APP_VERSION.github.repository}`}
                     target="_blank"
@@ -588,85 +523,81 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiConnected }) => {
                 </div>
               )}
 
-              {/* GitHub Owner 和贡献者 */}
-              {githubLoading ? (
-                <div className="settings-about-github-loading">
-                  <div className="loading-spinner" style={{ width: '16px', height: '16px', marginRight: '0.5rem' }}></div>
-                  <span>加载 GitHub 信息中...</span>
-                </div>
-              ) : githubError ? (
-                <div className="settings-about-github-error">
-                  <span style={{ color: '#e53e3e' }}>⚠️ {githubError}</span>
-                </div>
-              ) : (
-                <>
-                  {/* 项目 Owner */}
-                  {githubOwner && (
-                    <div className="settings-about-developer">
-                      <div className="settings-about-developer-header">
-                        <span className="settings-about-developer-label">项目所有者：</span>
-                        <a 
-                          href={githubOwner.html_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="settings-about-developer-link"
-                        >
-                          <img 
-                            src={githubOwner.avatar_url} 
-                            alt={githubOwner.login}
-                            className="settings-about-avatar"
-                          />
-                          <span>{githubOwner.login}</span>
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 贡献者列表 */}
-                  {githubContributors.length > 0 && (
-                    <div className="settings-about-contributors">
-                      <div className="settings-about-contributors-label">贡献者：</div>
-                      <div className="settings-about-contributors-list">
-                        {githubContributors.map((contributor) => (
-                          <a
-                            key={contributor.login}
-                            href={contributor.html_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="settings-about-contributor-item"
-                            title={`${contributor.login} (${contributor.contributions} 次提交)`}
-                          >
-                            <img 
-                              src={contributor.avatar_url} 
-                              alt={contributor.login}
-                              className="settings-about-contributor-avatar"
-                            />
-                            <span className="settings-about-contributor-name">{contributor.login}</span>
-                            <span className="settings-about-contributor-badge">{contributor.contributions}</span>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* 保留原有的联系信息 */}
-              <div className="settings-about-contact-info">
+              {/* ==================== GitHub 信息展示 ==================== */}
+              {/* 
+                设计说明：
+                - 使用构建时编译的版本快照信息，无需运行时网络请求
+                - 信息在构建时已同步，代表该版本发布时刻的贡献者状态
+              */}
+              
+              {/* 项目所有者和联系信息 */}
+              <div className="settings-about-developer">
+                {githubOwner && (
+                  <div className="settings-about-developer-header">
+                    <span className="settings-about-developer-label">Project Owner:</span>
+                    <a 
+                      href={githubOwner.html_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="settings-about-developer-link"
+                    >
+                      <img 
+                        src={githubOwner.avatar_url} 
+                        alt={githubOwner.login}
+                        className="settings-about-avatar"
+                      />
+                      <span>{githubOwner.login}</span>
+                    </a>
+                  </div>
+                )}
                 <div className="settings-about-contact-item">
-                  <span className="settings-about-contact-label">邮箱：</span>
+                  <span className="settings-about-contact-label">Email:</span>
                   <a href="mailto:manwjh@126.com" className="settings-about-contact-link">
                     manwjh@126.com
                   </a>
                 </div>
                 <div className="settings-about-contact-item">
-                  <span className="settings-about-contact-label">电话：</span>
+                  <span className="settings-about-contact-label">Phone:</span>
                   <span className="settings-about-contact-value">13510090675（微信同号）</span>
                 </div>
               </div>
 
+              {/* 贡献者列表（版本快照信息） */}
+              {githubContributors.length > 0 && (
+                <div className="settings-about-contributors">
+                  <div className="settings-about-contributors-label">Contributors:</div>
+                  <div className="settings-about-contributors-list">
+                    {githubContributors.map((contributor) => (
+                      <a
+                        key={contributor.login}
+                        href={contributor.html_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="settings-about-contributor-item"
+                        title={`${contributor.login} (${contributor.contributions} 次提交)`}
+                      >
+                        <img 
+                          src={contributor.avatar_url} 
+                          alt={contributor.login}
+                          className="settings-about-contributor-avatar"
+                        />
+                        <span className="settings-about-contributor-name">{contributor.login}</span>
+                        <span className="settings-about-contributor-badge">{contributor.contributions}</span>
+                      </a>
+                    ))}
+                  </div>
+                  {/* 开源许可证要求说明 */}
+                  <div className="settings-about-license-notice">
+                    <p className="settings-about-license-text">
+                      <span className="settings-about-license-icon">📄</span>
+                      This project is open source under the MIT License. Displaying contributor information is a requirement by the project owner to acknowledge and credit all contributors, in accordance with open source best practices.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="settings-about-tech">
-                <div className="settings-about-tech-label">技术栈：</div>
+                <div className="settings-about-tech-label">Tech Stack:</div>
                 <div className="settings-about-tech-badges">
                   <span className="settings-about-tech-badge">Electron</span>
                   <span className="settings-about-tech-badge">React</span>

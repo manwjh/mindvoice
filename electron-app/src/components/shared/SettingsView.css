@@ -531,6 +531,9 @@
   border-radius: 8px;
   border: 1px solid #e9ecef;
   margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .settings-about-developer-name {
@@ -538,6 +541,16 @@
   font-weight: 600;
   color: #2d3748;
   margin: 0 0 0.75rem 0;
+}
+
+.settings-about-developer .settings-about-contact-item {
+  margin: 0;
+}
+
+.settings-about-developer .settings-about-developer-header ~ .settings-about-contact-item:first-of-type {
+  border-top: 1px solid #e9ecef;
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .settings-about-contact {
@@ -626,4 +639,195 @@
   font-size: 0.875rem;
   color: #6c757d;
   margin: 0;
+}
+
+/* GitHub 相关样式 */
+.settings-about-github {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1.5rem;
+}
+
+.settings-about-github-label {
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.settings-about-github-link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.95rem;
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.settings-about-github-link:hover {
+  color: #764ba2;
+  background: #f0f0f0;
+}
+
+.settings-about-github-loading,
+.settings-about-github-error {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.settings-about-developer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-about-developer-label {
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.settings-about-developer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  color: #2d3748;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.settings-about-developer-link:hover {
+  background: #f0f0f0;
+  color: #667eea;
+}
+
+.settings-about-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #e9ecef;
+  transition: border-color 0.2s;
+}
+
+.settings-about-developer-link:hover .settings-about-avatar {
+  border-color: #667eea;
+}
+
+.settings-about-contributors {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1.5rem;
+}
+
+.settings-about-contributors-label {
+  font-size: 0.9rem;
+  color: #6c757d;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+}
+
+.settings-about-contributors-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.settings-about-contributor-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 20px;
+  text-decoration: none;
+  color: #2d3748;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.settings-about-contributor-item:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+}
+
+.settings-about-contributor-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #e9ecef;
+}
+
+.settings-about-contributor-name {
+  font-weight: 500;
+}
+
+.settings-about-contributor-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.375rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.settings-about-license-notice {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #f0f4ff;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+}
+
+.settings-about-license-text {
+  font-size: 0.8rem;
+  color: #4a5568;
+  line-height: 1.5;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.settings-about-license-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.settings-about-contact-info {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }

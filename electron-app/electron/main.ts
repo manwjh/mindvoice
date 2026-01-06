@@ -875,8 +875,8 @@ function setupCSP(): void {
   
   // 开发环境：允许unsafe-eval用于Vite HMR，生产环境：更严格的策略
   const csp = isDev
-    ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' ws://127.0.0.1:8765 http://127.0.0.1:8765 http://localhost:5173 ws://localhost:5173; img-src 'self' data: http://127.0.0.1:8765; font-src 'self' data:;"
-    : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:8765 http://127.0.0.1:8765; img-src 'self' data: http://127.0.0.1:8765; font-src 'self' data:;";
+    ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173; style-src 'self' 'unsafe-inline' http://localhost:5173; connect-src 'self' ws://127.0.0.1:8765 http://127.0.0.1:8765 http://localhost:5173 ws://localhost:5173 https://api.github.com; img-src 'self' data: http://127.0.0.1:8765 https://avatars.githubusercontent.com https://github.com; font-src 'self' data:;"
+    : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:8765 http://127.0.0.1:8765 https://api.github.com; img-src 'self' data: http://127.0.0.1:8765 https://avatars.githubusercontent.com https://github.com; font-src 'self' data:;";
   
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({

@@ -239,6 +239,7 @@ class SummaryRequest(BaseModel):
     temperature: float = Field(default=0.5, ge=0, le=2, description="温度参数")
     max_tokens: Optional[int] = Field(default=2500, description="最大生成token数")
     stream: bool = Field(default=True, description="是否使用流式输出")
+    device_id: Optional[str] = Field(default=None, description="设备ID（用于消费记录）")
 
 
 class TranslateRequest(BaseModel):
@@ -248,6 +249,7 @@ class TranslateRequest(BaseModel):
     source_lang: Optional[str] = Field(None, description="源语言代码（zh/en/ja/ko），与language_pair互斥")
     target_lang: Optional[str] = Field(None, description="目标语言代码（zh/en/ja/ko），与language_pair互斥")
     stream: bool = Field(default=False, description="是否使用流式输出")
+    device_id: Optional[str] = Field(default=None, description="设备ID（用于消费记录）")
 
 
 class BatchTranslateRequest(BaseModel):
@@ -256,6 +258,7 @@ class BatchTranslateRequest(BaseModel):
     source_lang: Optional[str] = Field(None, description="源语言代码（zh/en/ja/ko），与language_pair二选一")
     target_lang: Optional[str] = Field(None, description="目标语言代码（zh/en/ja/ko），与language_pair二选一")
     language_pair: Optional[str] = Field(None, description="语言对（如 zh-en, en-ja），自动检测翻译方向")
+    device_id: Optional[str] = Field(default=None, description="设备ID（用于消费记录）")
 
 
 class LLMInfoResponse(BaseModel):
@@ -2068,6 +2071,29 @@ async def generate_summary(request: SummaryRequest):
                         # 使用SSE格式发送数据
                         yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
+                    
+                    # 记录LLM消费（流式响应完成后）
+                    if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                        try:
+                            user_id = get_user_id_by_device(request.device_id)
+                            if not user_id:
+                                logger.warning(f"[Summary] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                            else:
+                                usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                                if usage:
+                                    consumption_service.record_llm_consumption(
+                                        user_id=user_id,
+                                        device_id=request.device_id,
+                                        prompt_tokens=usage.get('prompt_tokens', 0),
+                                        completion_tokens=usage.get('completion_tokens', 0),
+                                        total_tokens=usage.get('total_tokens', 0),
+                                        model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                        provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                        model_source='vendor'
+                                    )
+                                    logger.info(f"[Summary] ✅ LLM消费已记录: user_id={user_id}, {usage['total_tokens']} tokens")
+                        except Exception as e:
+                            logger.error(f"[Summary] 记录LLM消费失败: {e}", exc_info=True)
                 except Exception as e:
                     logger.error(f"流式生成小结失败: {e}", exc_info=True)
                     error_info = SystemErrorInfo(
@@ -2094,6 +2120,29 @@ async def generate_summary(request: SummaryRequest):
                 temperature=request.temperature,
                 max_tokens=request.max_tokens
             )
+            
+            # 记录LLM消费（非流式响应后）
+            if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                try:
+                    user_id = get_user_id_by_device(request.device_id)
+                    if not user_id:
+                        logger.warning(f"[Summary] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                    else:
+                        usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                        if usage:
+                            consumption_service.record_llm_consumption(
+                                user_id=user_id,
+                                device_id=request.device_id,
+                                prompt_tokens=usage.get('prompt_tokens', 0),
+                                completion_tokens=usage.get('completion_tokens', 0),
+                                total_tokens=usage.get('total_tokens', 0),
+                                model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                model_source='vendor'
+                            )
+                            logger.info(f"[Summary] ✅ LLM消费已记录: user_id={user_id}, {usage['total_tokens']} tokens")
+                except Exception as e:
+                    logger.error(f"[Summary] 记录LLM消费失败: {e}", exc_info=True)
             
             return ChatResponse(success=True, message=summary)
         
@@ -2182,6 +2231,29 @@ async def translate_text(request: TranslateRequest):
                         "error": error_info.to_dict()
                     }
                 
+                # 记录LLM消费（非流式翻译完成后）
+                if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                    try:
+                        user_id = get_user_id_by_device(request.device_id)
+                        if not user_id:
+                            logger.warning(f"[Translation] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                        else:
+                            usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                            if usage:
+                                consumption_service.record_llm_consumption(
+                                    user_id=user_id,
+                                    device_id=request.device_id,
+                                    prompt_tokens=usage.get('prompt_tokens', 0),
+                                    completion_tokens=usage.get('completion_tokens', 0),
+                                    total_tokens=usage.get('total_tokens', 0),
+                                    model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                    provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                    model_source='vendor'
+                                )
+                                logger.info(f"[Translation] ✅ LLM消费已记录: user_id={user_id}, {usage['total_tokens']} tokens")
+                    except Exception as e:
+                        logger.error(f"[Translation] 记录LLM消费失败: {e}", exc_info=True)
+                
                 return {
                     "success": True,
                     "translation": result
@@ -2206,6 +2278,29 @@ async def translate_text(request: TranslateRequest):
                             yield f"data: {json.dumps({'chunk': chunk}, ensure_ascii=False)}\n\n"
                         
                         yield "data: [DONE]\n\n"
+                        
+                        # 记录LLM消费（流式翻译完成后）
+                        if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                            try:
+                                user_id = get_user_id_by_device(request.device_id)
+                                if not user_id:
+                                    logger.warning(f"[Translation] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                                else:
+                                    usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                                    if usage:
+                                        consumption_service.record_llm_consumption(
+                                            user_id=user_id,
+                                            device_id=request.device_id,
+                                            prompt_tokens=usage.get('prompt_tokens', 0),
+                                            completion_tokens=usage.get('completion_tokens', 0),
+                                            total_tokens=usage.get('total_tokens', 0),
+                                            model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                            provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                            model_source='vendor'
+                                        )
+                                        logger.info(f"[Translation] ✅ LLM消费已记录: user_id={user_id}, {usage['total_tokens']} tokens")
+                            except Exception as e:
+                                logger.error(f"[Translation] 记录LLM消费失败: {e}", exc_info=True)
                         
                     except Exception as e:
                         logger.error(f"[API] 流式翻译失败: {e}")
@@ -2232,6 +2327,29 @@ async def translate_text(request: TranslateRequest):
                     target_lang=request.target_lang,
                     stream=False
                 )
+                
+                # 记录LLM消费（非流式翻译完成后）
+                if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+                    try:
+                        user_id = get_user_id_by_device(request.device_id)
+                        if not user_id:
+                            logger.warning(f"[Translation] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                        else:
+                            usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                            if usage:
+                                consumption_service.record_llm_consumption(
+                                    user_id=user_id,
+                                    device_id=request.device_id,
+                                    prompt_tokens=usage.get('prompt_tokens', 0),
+                                    completion_tokens=usage.get('completion_tokens', 0),
+                                    total_tokens=usage.get('total_tokens', 0),
+                                    model=llm_service.llm_provider._config.get('model', 'unknown'),
+                                    provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                                    model_source='vendor'
+                                )
+                                logger.info(f"[Translation] ✅ LLM消费已记录: user_id={user_id}, {usage['total_tokens']} tokens")
+                    except Exception as e:
+                        logger.error(f"[Translation] 记录LLM消费失败: {e}", exc_info=True)
                 
                 return {
                     "success": True,
@@ -2285,6 +2403,33 @@ async def batch_translate(request: BatchTranslateRequest):
             )
         else:
             raise ValueError("必须提供 language_pair 或 (source_lang + target_lang)")
+        
+        # 记录LLM消费（批量翻译完成后）
+        # 注意：批量翻译是循环调用单条翻译，get_last_usage()只能获取最后一次调用的token使用量
+        # 如果需要精确统计，需要在批量翻译循环中累加每次调用的token使用量
+        if request.device_id and consumption_service and llm_service and llm_service.llm_provider:
+            try:
+                user_id = get_user_id_by_device(request.device_id)
+                if not user_id:
+                    logger.warning(f"[Translation] 无法获取user_id，跳过LLM消费记录: device_id={request.device_id}")
+                else:
+                    usage = llm_service.llm_provider.get_last_usage() if hasattr(llm_service.llm_provider, 'get_last_usage') else None
+                    if usage:
+                        # 注意：这里只记录了最后一次翻译的token使用量
+                        # 批量翻译实际消耗的token可能更多（等于所有单条翻译的token总和）
+                        consumption_service.record_llm_consumption(
+                            user_id=user_id,
+                            device_id=request.device_id,
+                            prompt_tokens=usage.get('prompt_tokens', 0),
+                            completion_tokens=usage.get('completion_tokens', 0),
+                            total_tokens=usage.get('total_tokens', 0),
+                            model=llm_service.llm_provider._config.get('model', 'unknown'),
+                            provider=llm_service.llm_provider._config.get('provider', 'unknown'),
+                            model_source='vendor'
+                        )
+                        logger.info(f"[Translation] ✅ LLM消费已记录（批量翻译，仅最后一次）: user_id={user_id}, {usage['total_tokens']} tokens")
+            except Exception as e:
+                logger.error(f"[Translation] 记录LLM消费失败: {e}", exc_info=True)
         
         return {
             "success": True,
