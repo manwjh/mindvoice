@@ -1,5 +1,34 @@
 # 更新日志
 
+## [未发布]
+
+### 🔧 构建优化 (2026-01-07)
+
+#### Windows 构建脚本增强
+- ✅ **智能 Python 检测**: 自动识别 `python` / `python3` 命令（Windows 兼容性）
+- ✅ **跨平台虚拟环境**: 支持 Windows `Scripts/activate` 和 Unix `bin/activate`
+- ✅ **Python 3.14+ 兼容**: 预安装 numpy 二进制包避免编译错误
+- ✅ **智能依赖安装**: 
+  - 网络容错（自动降级到清华镜像）
+  - 依赖冲突自动处理（宽松模式）
+  - 逐包安装降级（跳过有问题的包）
+- ✅ **跨平台日志**: Windows 使用 `build/` 目录，Unix 使用 `/tmp`
+- ✅ **超时保护**: 支持 macOS `gtimeout`（brew install coreutils）
+- ✅ **路径修复**: 修正 Python 后端目录路径（`python-backend` → `dist`）
+- ✅ **统一临时文件管理**: 使用 `TEMP_DIR` 变量
+- ✅ **自动清理**: 构建成功后清理临时日志文件
+
+#### macOS 构建脚本同步
+- ✅ 统一 Python 后端目录路径与 Windows 一致
+- ✅ 保持构建脚本的跨平台一致性
+
+#### 构建配置优化
+- ✅ `electron-builder.json`: 修复 extraResources 中的 Python 后端路径
+
+**PR 贡献者**: 感谢社区贡献者提交的 Windows 构建优化 PR
+
+---
+
 ## 版本：v1.9.2 (2026-01-06)
 
 ### 🧹 项目清理与规范

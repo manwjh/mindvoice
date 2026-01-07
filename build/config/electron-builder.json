@@ -13,7 +13,7 @@
   ],
   "extraResources": [
     {
-      "from": "../python-backend/dist/",
+      "from": "../dist/",
       "to": "python-backend/",
       "filter": ["**/*"]
     },

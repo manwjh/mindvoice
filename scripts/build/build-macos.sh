@@ -16,7 +16,8 @@ set -euo pipefail  # 严格错误处理
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
-PYTHON_BACKEND_DIR="$PROJECT_ROOT/python-backend"
+PYTHON_DIST_DIR="$PROJECT_ROOT/dist"
+PYTHON_BUILD_DIR="$PROJECT_ROOT/build/python-backend"
 ELECTRON_DIR="$PROJECT_ROOT/electron-app"
 RELEASE_DIR="$PROJECT_ROOT/release"
 
@@ -95,8 +96,8 @@ check_environment() {
 clean_build() {
     log_info "清理旧的构建文件..."
     
-    rm -rf "$PYTHON_BACKEND_DIR/dist"
-    rm -rf "$PYTHON_BACKEND_DIR/build"
+    rm -rf "$PYTHON_DIST_DIR"
+    rm -rf "$PYTHON_BUILD_DIR"
     rm -rf "$ELECTRON_DIR/dist"
     rm -rf "$ELECTRON_DIR/dist-electron"
     
@@ -130,12 +131,12 @@ build_python_backend() {
     # 使用 spec 文件打包
     log_info "执行打包..."
     pyinstaller "$BUILD_DIR/config/pyinstaller.spec" \
-        --distpath "$PYTHON_BACKEND_DIR/dist" \
-        --workpath "$PYTHON_BACKEND_DIR/build" \
+        --distpath "$PYTHON_DIST_DIR" \
+        --workpath "$PYTHON_BUILD_DIR" \
         --noconfirm
     
     # 验证输出
-    if [ ! -f "$PYTHON_BACKEND_DIR/dist/mindvoice-api" ]; then
+    if [ ! -f "$PYTHON_DIST_DIR/mindvoice-api" ]; then
         log_error "Python 后端打包失败"
         deactivate
         exit 1
@@ -143,7 +144,7 @@ build_python_backend() {
     
     # 测试运行
     log_info "测试 Python 后端..."
-    if "$PYTHON_BACKEND_DIR/dist/mindvoice-api" --help &> /dev/null; then
+    if "$PYTHON_DIST_DIR/mindvoice-api" --help &> /dev/null; then
         log_success "Python 后端打包成功"
     else
         log_warning "Python 后端可能存在问题，但继续构建..."
