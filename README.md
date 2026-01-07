@@ -599,7 +599,9 @@ llm:
 
 ## 🤝 贡献
 
-欢迎贡献！请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献指南。
+欢迎贡献！在提交代码前，请：
+1. 📋 阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献指南
+2. ⚖️ 签署 [CLA](CLA.md) 贡献者许可协议
 
 **贡献方向**：
 - 🐛 修复Bug
@@ -608,9 +610,21 @@ llm:
 - 🎨 优化UI/UX
 - 🌍 添加国际化支持
 
+**注意**：您的贡献可能被用于商业版本（MindVoice Pro），详见CLA。
+
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+### 开源版本
+本项目（MindVoice开源版）采用 **MIT License** - 详见 [LICENSE](LICENSE) 文件。
+
+### 商业版本
+MindVoice Pro是独立的商业产品，受专有许可协议约束。包含：
+- ✅ 激活码授权系统
+- ✅ 高级AI功能
+- ✅ 技术支持服务
+
+### 贡献者协议
+所有贡献者需签署 [CLA](CLA.md)，授权项目维护者将贡献用于开源和商业版本。
 
 ## 👨‍💻 作者
 

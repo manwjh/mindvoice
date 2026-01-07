@@ -1,392 +1,94 @@
-# Contributing to MindVoice
+# 贡献指南 (Contributing Guide)
 
-Thank you for your interest in contributing to MindVoice! This document provides guidelines and instructions for contributing to this multi-app voice assistant project.
+感谢您对MindVoice项目的关注！我们欢迎所有形式的贡献。
 
-**Project Version**: 1.0.0 | **Last Updated**: 2025-12-31
+## 📋 开始之前
 
-## Code of Conduct
+### 1. 阅读并签署CLA ⭐ 必须
+在提交代码前，请**务必阅读并签署** [贡献者许可协议 (CLA)](./CLA.md)。
 
-- Be respectful and inclusive
-- Welcome newcomers and help them learn
-- Focus on constructive feedback
-- Respect different viewpoints and experiences
-- Follow the project's coding standards and conventions
+**为什么需要CLA？**
+- 保护项目的法律安全
+- 允许维护者将贡献用于商业版本（MindVoice Pro）
+- 确保项目的可持续发展
 
-## How to Contribute
+**如何签署？**
+在您的Pull Request中添加注释：
+```
+我已阅读并同意MindVoice CLA协议
+I have read and agree to the MindVoice CLA
+```
 
-### Reporting Bugs
+### 2. 了解项目架构
+- 阅读 [README.md](./README.md) 了解项目概况
+- 查看 [编程规则](./.cursorrules) 了解代码规范
+- 浏览 [文档](./docs/) 了解架构设计
 
-1. Check if the bug has already been reported in [Issues](https://github.com/yourusername/mindvoice/issues)
-2. If not, create a new issue with:
-   - Clear title and description
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Environment information (OS, Python version, Node.js version)
-   - Screenshots if applicable
+## 🤝 贡献方式
 
-### Suggesting Features
+### 代码贡献
+1. Fork本项目
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交改动 (`git commit -m 'feat: 添加某功能'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建Pull Request
+6. **在PR中签署CLA**
 
-1. Check if the feature has already been suggested
-2. Create a new issue with:
-   - Clear description of the feature
-   - Use cases and benefits
-   - Possible implementation approach (if you have ideas)
+### 提交信息规范
+遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
+```
+feat: 添加新功能
+fix: 修复Bug
+docs: 更新文档
+style: 代码格式调整
+refactor: 重构代码
+test: 添加测试
+chore: 构建/工具链改动
+```
 
-### Submitting Pull Requests
+### Bug报告
+- 使用 GitHub Issues
+- 提供详细的复现步骤
+- 包含系统环境信息
 
-1. **Fork the repository** and create a new branch from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+### 功能建议
+- 先创建 Issue 讨论
+- 说明使用场景和价值
+- 考虑向后兼容性
 
-2. **Make your changes**:
-   - Follow the existing code style
-   - Add comments for complex logic
-   - Update documentation if needed
-   - Add tests if applicable
+## 🔒 商业版本说明
 
-3. **Test your changes**:
-   - Ensure all existing tests pass
-   - Test your new functionality
-   - Test on different platforms if possible
+- **开源版**（本仓库）：社区版，MIT许可
+- **Pro版**：商业版，专有许可，包含高级功能
 
-4. **Commit your changes**:
-   ```bash
-   git commit -m "Add: description of your changes"
-   ```
-   Use clear, descriptive commit messages.
+您的贡献**可能被用于Pro版本**，具体见 [CLA](./CLA.md)。
 
-5. **Push to your fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-6. **Create a Pull Request**:
-   - Provide a clear description of your changes
-   - Reference any related issues
-   - Wait for review and address feedback
-
-## Development Setup
-
-1. **Clone your fork**:
-   ```bash
-   git clone https://github.com/yourusername/mindvoice.git
-   cd mindvoice
-   ```
-
-2. **Set up Python virtual environment** (Important: Always use venv):
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. **Set up Node.js environment**:
-   ```bash
-   cd electron-app
-   npm install
-   cd ..
-   ```
-
-4. **Configure services**:
-   ```bash
-   cp config.yml.example config.yml
-   # Edit config.yml with your own credentials:
-   # - ASR: Volcano Engine credentials
-   # - LLM: Your LLM API key and model
-   ```
-
-5. **Start development**:
-   ```bash
-   # Use the quick start script
-   ./quick_start.sh
-   
-   # Or manually:
-   # Terminal 1: Start API server
-   source venv/bin/activate
-   python api_server.py
-   
-   # Terminal 2: Start frontend
-   cd electron-app
-   npm run dev
-   ```
-
-6. **Stop services**:
-   ```bash
-   ./stop.sh
-   ```
-
-## Code Style
+## 📝 代码规范
 
 ### Python
-- **Follow PEP 8** style guide
-- **Use type hints** for function parameters and return types
-- **Add docstrings** for public functions and classes (Google style)
-- **Virtual environment**: Always run Python commands inside venv
-- **Naming conventions**:
-  - Classes: `PascalCase` (e.g., `VoiceService`)
-  - Functions/variables: `snake_case` (e.g., `start_recording`)
-  - Constants: `UPPER_SNAKE_CASE` (e.g., `API_BASE_URL`)
+- 遵循 PEP 8
+- 使用类型注解
+- 添加文档字符串
 
 ### TypeScript/React
-- **Follow React best practices** - Use functional components and Hooks
-- **TypeScript types** - Avoid `any`, use specific types
-- **Component naming**: `PascalCase` (e.g., `VoiceNote.tsx`)
-- **Props interface**: `ComponentNameProps`
-- **CSS files**: Same name as component (e.g., `VoiceNote.css`)
-- **Naming conventions**:
-  - Boolean variables: Use `is/has/should` prefix (e.g., `isConnected`)
-  - Event handlers: Use `handle` prefix (e.g., `handleClick`)
+- 使用函数组件和Hooks
+- Props类型定义
+- 避免使用any
 
-### Icons (图标系统)
-- **统一使用 Icon 组件** - 不要直接使用 `<img>` 标签或导入 SVG 文件
-  ```tsx
-  // ✅ 正确
-  import { Icon } from '@/components/shared/Icon';
-  <Icon name="mic" size={24} color="#1890ff" />
-  
-  // ❌ 错误
-  import micIcon from '@/assets/icons/ui/mic.svg';
-  <img src={micIcon} />
-  ```
-- **图标分类**:
-  - UI 图标：放在 `src/assets/icons/ui/` 目录
-  - 托盘图标：放在 `src/assets/icons/tray/` 目录
-  - 应用图标：放在 `src/assets/icons/app/` 目录
-- **添加新图标**:
-  1. 将 SVG 文件放到对应目录（确保使用 `currentColor`）
-  2. 在 `iconRegistry.ts` 中注册图标
-  3. 使用 `<Icon name="new-icon" />`
-- **图标规范**:
-  - 使用 SVG 格式（UI 图标）
-  - 颜色使用 `currentColor` 以支持主题
-  - 文件命名：kebab-case（如 `mic.svg`）
-- **详细文档**: 查看 [docs/ICON_SYSTEM_GUIDE.md](docs/ICON_SYSTEM_GUIDE.md)
+### 测试
+- 为关键功能编写测试
+- 确保所有测试通过
 
-### Git Commit Messages
+## ⚖️ 许可证
 
-Follow this format:
-```
-<type>(<scope>): <subject>
+- 开源版：[MIT License](./LICENSE)
+- 贡献者：签署 [CLA](./CLA.md)
 
-type: feat|fix|docs|style|refactor|test|chore
-scope: component|api|asr|llm|ui
-subject: Brief description (in Chinese or English)
-```
+## 📧 联系方式
 
-Examples:
-```
-feat(ui): Add Zen application
-fix(asr): Fix WebSocket reconnection issue
-docs(readme): Update installation instructions
-refactor(llm): Improve error handling
-```
-
-## Project Structure
-
-```
-src/                  # Python backend
-├── api/              # FastAPI endpoints
-├── core/             # Core modules (config, plugin manager)
-├── providers/        # ASR, LLM, Storage providers
-├── services/         # Business logic services
-├── prompts/          # AI role prompts
-└── utils/            # Utility modules
-
-electron-app/         # Electron frontend
-├── src/
-│   ├── components/
-│   │   ├── apps/     # Application components (VoiceNote, SmartChat, VoiceZen)
-│   │   └── shared/   # Shared components (Sidebar, Toast, etc.)
-│   ├── utils/        # Frontend utilities
-│   └── version.ts    # Global version configuration
-└── electron/         # Electron main process
-
-docs/                 # Documentation
-```
-
-## Important Coding Rules
-
-Please read and follow these project-specific rules:
-
-1. **Version Management**: 
-   - Only modify version in `electron-app/src/version.ts`
-   - Use `./scripts/update_version.sh` script for version updates
-   - See [VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md)
-
-2. **Date/Time Usage**:
-   - Always use current system date, not hardcoded dates
-   - Format: `YYYY-MM-DD` for display, ISO 8601 for timestamps
-
-3. **Virtual Environment**:
-   - All Python commands must run inside venv
-   - Activate: `source venv/bin/activate`
-
-4. **Testing Strategy**:
-   - Only write tests for key modules (ASR, LLM, WebSocket)
-   - Don't create separate test programs
-   - Integrate tests within the project
-
-## Adding New Features
-
-### Adding a New Application
-
-The project supports multiple apps (VoiceNote, SmartChat, VoiceZen). To add a new one:
-
-1. **Create app directory**:
-   ```bash
-   cd electron-app/src/components/apps
-   mkdir YourNewApp
-   ```
-
-2. **Create app component**:
-   ```typescript
-   // YourNewApp.tsx
-   import React from 'react';
-   import './YourNewApp.css';
-   
-   interface YourNewAppProps {
-     apiConnected: boolean;
-   }
-   
-   export const YourNewApp: React.FC<YourNewAppProps> = ({ apiConnected }) => {
-     return (
-       <div className="your-new-app">
-         {/* Your app content */}
-       </div>
-     );
-   };
-   ```
-
-3. **Update type definitions** in `Sidebar.tsx`:
-   ```typescript
-   export type AppView = 'voice-note' | 'smart-chat' | 'voice-zen' | 'your-new-app' | 'history' | 'settings';
-   ```
-
-4. **Add to sidebar** and **update App.tsx** routing
-
-5. **Update documentation** - Add your app to README.md
-
-See [MULTI_APP_ARCHITECTURE.md](docs/MULTI_APP_ARCHITECTURE.md) for detailed guide.
-
-### Adding a New ASR Provider
-
-1. Create a new file in `src/providers/asr/`
-2. Inherit from `ASRProvider` base class (see `src/core/base.py`)
-3. Implement required methods:
-   - `initialize(config)` - Initialize provider
-   - `start_streaming_recognition(language)` - Start streaming ASR
-   - `send_audio_chunk(audio_data)` - Send audio data
-   - `stop_streaming_recognition()` - Stop and get final result
-4. Load in `src/api/server.py`
-5. Add configuration in `config.yml`
-6. Update documentation
-
-### Adding a New LLM Provider
-
-The project uses **LiteLLM**, which supports 100+ LLM services out of the box.
-
-To use a new LLM:
-1. Simply update `config.yml` with your LLM credentials
-2. LiteLLM handles the rest automatically
-
-See [LLM_INTEGRATION.md](docs/LLM_INTEGRATION.md) for details.
-
-### Adding a New Storage Provider
-
-1. Create a new file in `src/providers/storage/`
-2. Inherit from `StorageProvider` base class
-3. Implement required methods:
-   - `save_record(text, metadata)` - Save a record
-   - `get_record(record_id)` - Retrieve a record
-   - `list_records(limit, offset, app_type)` - List records
-   - `delete_record(record_id)` - Delete a record
-4. Update configuration
-5. Update documentation
-
-## Testing
-
-Following the project's testing strategy:
-
-- **Key modules only**: Write tests for ASR, LLM, WebSocket, and storage
-- **Integration over unit**: Focus on integration tests for key flows
-- **No separate test programs**: Integrate tests within the project structure
-- **Manual testing**: Test all three apps (VoiceNote, SmartChat, VoiceZen)
-- **Cross-platform**: Test on multiple platforms when possible (macOS, Linux, Windows)
-
-### Testing Checklist
-
-Before submitting a PR:
-- [ ] All existing functionality still works
-- [ ] New features tested manually
-- [ ] No console errors
-- [ ] WebSocket connections stable
-- [ ] ASR and LLM services respond correctly
-- [ ] UI/UX is consistent with existing design
-
-## Documentation
-
-### When to Update Documentation
-
-- **README.md**: Adding new features, changing setup process
-- **Code comments**: Complex logic, algorithms, workarounds
-- **API documentation**: New endpoints, changed request/response formats
-- **Architecture docs**: Significant architectural changes
-- **Version**: Update version in `version.ts` and use `update_version.sh` script
-
-### Documentation Guidelines
-
-- Use **Chinese** for code comments in Chinese files
-- Use **English** for code comments in shared/library files
-- Keep examples **up to date**
-- Include **screenshots** for UI changes
-- Reference related documents using relative links
-- **Only write necessary Markdown documents**: Don't create documentation files unless they provide clear value. Avoid creating redundant or trivial `.md` files
-
-## Key Documentation Files
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture
-- [MULTI_APP_ARCHITECTURE.md](docs/MULTI_APP_ARCHITECTURE.md) - Multi-app guide
-- [LLM_INTEGRATION.md](docs/LLM_INTEGRATION.md) - LLM integration
-- [VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md) - Version management
-- [OPTIMIZATION_GUIDE.md](docs/OPTIMIZATION_GUIDE.md) - Performance tips
-
-## Getting Help
-
-### Resources
-
-- **Architecture Questions**: Read `docs/ARCHITECTURE.md`
-- **Multi-App Questions**: Read `docs/MULTI_APP_ARCHITECTURE.md`
-- **LLM Questions**: Read `docs/LLM_INTEGRATION.md`
-- **General Questions**: Open a GitHub issue
-
-### Community
-
-- Open an issue for bugs or feature requests
-- Start a discussion for general questions
-- Submit a PR for code contributions
-
-## Review Process
-
-1. **Automated checks**: Ensure your code follows style guidelines
-2. **Manual review**: Maintainers will review your code
-3. **Testing**: Test your changes thoroughly
-4. **Documentation**: Update relevant documentation
-5. **Approval**: At least one maintainer approval required
-
-## Recognition
-
-Contributors will be recognized in:
-- Project README
-- Release notes
-- GitHub contributors page
+- 邮箱：manwjh@126.com
+- GitHub：[@manwjh](https://github.com/manwjh)
 
 ---
 
-Thank you for contributing to MindVoice! 🎉
-
-**Project**: MindVoice v1.0.0  
-**Maintainer**: 深圳王哥 & AI  
-**Email**: manwjh@126.com  
-**Last Updated**: 2025-12-31
-
+再次感谢您的贡献！🎉
