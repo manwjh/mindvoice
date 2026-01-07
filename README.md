@@ -8,8 +8,6 @@
 
 **版本**: 1.8.2 | **发布日期**: 2026-01-06
 
-> 💼 **企业版**: 如需团队协作、云同步、高级翻译等企业级功能，请联系 manwjh@126.com
-
 ## ✨ 核心特性
 
 - 🎤 **实时语音识别** - 支持流式ASR，实时转文字，智能VAD语音活动检测
@@ -240,6 +238,26 @@ npm run dev
 ```
 
 ## ⚙️ 配置说明
+
+### 快速配置指南
+
+1. **复制配置模板**：
+```bash
+cp config.yml.example config.yml
+```
+
+2. **准备ASR服务**（必需）：
+   - 推荐：[火山引擎语音识别](https://www.volcengine.com/product/sami-asr)
+   - 其他选择：阿里云、腾讯云、百度AI等
+   - 获取：`app_id`、`app_key`、`access_key`
+
+3. **准备LLM服务**（必需）：
+   - 支持：OpenAI、DeepSeek、通义千问、Kimi等100+模型
+   - 获取：`api_key` 和 `base_url`
+
+4. **编辑 config.yml**，填入你的服务配置
+
+详细配置说明见下文各小节 ↓
 
 ### ASR配置（火山引擎）
 

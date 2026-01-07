@@ -38,7 +38,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ deviceId }) =>
   const [email, setEmail] = useState('');
   const [bio, setBio] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [showUserId, setShowUserId] = useState(false); // 控制 user_id 显示/隐藏
 
   // 加载用户信息
   useEffect(() => {
@@ -194,42 +193,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({ deviceId }) =>
             </div>
           </div>
         </div>
-
-        {/* 用户ID（只读） */}
-        {profile && (
-          <div className="form-group user-id-group">
-            <label htmlFor="user-id">用户ID</label>
-            <div className="user-id-field">
-              <input
-                id="user-id"
-                type="text"
-                value={showUserId ? profile.user_id : '••••••••••••••••••••••••••••••••••••'}
-                readOnly
-                className="user-id-input"
-              />
-              <button
-                type="button"
-                className="btn-toggle-visibility"
-                onClick={() => setShowUserId(!showUserId)}
-                title={showUserId ? "隐藏用户ID" : "显示用户ID"}
-              >
-                {showUserId ? '🙈' : '👁️'}
-              </button>
-              <button
-                type="button"
-                className="btn-copy-id"
-                onClick={() => {
-                  navigator.clipboard.writeText(profile.user_id);
-                  showMessage('success', '用户ID已复制到剪贴板');
-                }}
-                title="复制用户ID"
-              >
-                📋
-              </button>
-            </div>
-            <p className="hint security-hint">⚠️ 这是您的唯一身份标识，请勿泄露给他人</p>
-          </div>
-        )}
 
         {/* 昵称 */}
         <div className="form-group">

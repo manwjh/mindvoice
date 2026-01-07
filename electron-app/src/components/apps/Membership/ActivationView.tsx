@@ -16,6 +16,8 @@ export const ActivationView: React.FC<ActivationViewProps> = ({ deviceId }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [showUserId, setShowUserId] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // 获取 user_id
   React.useEffect(() => {
@@ -33,44 +35,22 @@ export const ActivationView: React.FC<ActivationViewProps> = ({ deviceId }) => {
     fetchUserId();
   }, [deviceId]);
 
-  const handleActivate = async () => {
-    if (!code.trim()) {
-      setMessage({ type: 'error', text: '请输入激活码' });
-      return;
-    }
-
-    if (!userId) {
-      setMessage({ type: 'error', text: '用户信息加载中，请稍候' });
-      return;
-    }
-
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/membership/activate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          activation_code: code.trim(),
-        }),
+  // 复制用户ID
+  const handleCopyUserId = () => {
+    if (userId) {
+      navigator.clipboard.writeText(userId).then(() => {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
       });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage({ type: 'success', text: data.message || '激活成功！' });
-        setCode('');
-      } else {
-        setMessage({ type: 'error', text: data.error || '激活失败' });
-      }
-    } catch (err) {
-      console.error('[激活] 失败:', err);
-      setMessage({ type: 'error', text: '网络错误，请稍后重试' });
-    } finally {
-      setLoading(false);
     }
+  };
+
+  const handleActivate = async () => {
+    // 激活码功能未实现
+    setMessage({ 
+      type: 'error', 
+      text: '激活码功能暂未实现' 
+    });
   };
 
   return (
@@ -78,12 +58,50 @@ export const ActivationView: React.FC<ActivationViewProps> = ({ deviceId }) => {
       <div className="activation-card">
         <div className="activation-header">
           <h2>激活会员</h2>
-          <p className="subtitle">输入激活码升级您的会员等级</p>
         </div>
 
         <div className="activation-form">
+          {/* 用户ID信息栏 */}
+          <div className="user-id-section">
+            <div className="input-group">
+              <label htmlFor="user-id">用户ID</label>
+              <div className="user-id-input-wrapper">
+                <input
+                  id="user-id"
+                  type={showUserId ? 'text' : 'password'}
+                  className="user-id-input"
+                  value={userId || '加载中...'}
+                  readOnly
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setShowUserId(!showUserId)}
+                  title={showUserId ? '隐藏' : '显示'}
+                >
+                  {showUserId ? '👁️' : '🔒'}
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={handleCopyUserId}
+                  disabled={!userId}
+                  title="复制"
+                >
+                  {copySuccess ? '✅' : '📋'}
+                </button>
+              </div>
+            </div>
+            <div className="security-warning">
+              ⚠️ 这是你的唯一身份标识，请勿泄露给他人
+            </div>
+          </div>
+
+          {/* 激活码部分说明 */}
+          <p className="activation-subtitle">输入激活码升级您的会员等级</p>
+
+          {/* 激活码输入 */}
           <div className="input-group">
-            <label htmlFor="activation-code">激活码</label>
             <input
               id="activation-code"
               type="text"
@@ -119,17 +137,8 @@ export const ActivationView: React.FC<ActivationViewProps> = ({ deviceId }) => {
         </div>
 
         <div className="help-section">
-          <h4>如何获取激活码？</h4>
-          <ul>
-            <li>联系客服购买激活码</li>
-            <li>参与活动获取免费激活码</li>
-            <li>推荐好友获得奖励激活码</li>
-          </ul>
-          <div className="contact-info">
-            <strong>联系方式:</strong>
-            <div>邮箱: manwjh@126.com</div>
-            <div>微信: 13510090675</div>
-          </div>
+          <h4>说明</h4>
+          <p>激活码功能暂未实现，敬请期待。</p>
         </div>
       </div>
     </div>

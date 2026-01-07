@@ -65,6 +65,21 @@ class ActivateResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ValidateCodeRequest(BaseModel):
+    """验证激活码请求"""
+    user_id: str = Field(..., description="用户ID")
+    activation_code: str = Field(..., description="激活码")
+
+
+class ValidateCodeResponse(BaseModel):
+    """验证激活码响应"""
+    success: bool
+    message: str
+    is_valid: bool = False
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
 class QuotaCheckRequest(BaseModel):
     """额度检查请求"""
     user_id: str = Field(..., description="用户ID")
@@ -154,73 +169,29 @@ async def check_quota(request: QuotaCheckRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/membership/validate-code", response_model=ValidateCodeResponse)
+async def validate_activation_code(request: ValidateCodeRequest):
+    """验证激活码（功能未实现）"""
+    logger.info(f"[API] 激活码验证请求（功能未实现） user_id={request.user_id}")
+    
+    return ValidateCodeResponse(
+        success=True,
+        is_valid=False,
+        message="激活码功能暂未实现",
+        error="FEATURE_NOT_AVAILABLE"
+    )
+
+
 @router.post("/membership/activate", response_model=ActivateResponse)
 async def activate_membership(request: ActivateRequest):
-    """使用激活码激活会员"""
-    if not membership_service or not activation_service:
-        raise HTTPException(status_code=503, detail="会员服务未初始化")
+    """激活会员（功能未实现）"""
+    logger.info(f"[API] 激活请求（功能未实现） user_id={request.user_id}")
     
-    try:
-        # 1. 验证激活码
-        code_info = activation_service.get_activation_code(request.activation_code)
-        
-        if not code_info:
-            return ActivateResponse(
-                success=False,
-                message="激活码不存在",
-                error="INVALID_CODE"
-            )
-        
-        if code_info['is_used']:
-            return ActivateResponse(
-                success=False,
-                message="激活码已被使用",
-                error="CODE_USED"
-            )
-        
-        if code_info['expires_at']:
-            from datetime import datetime
-            expires_at = datetime.strptime(code_info['expires_at'], '%Y-%m-%d %H:%M:%S')
-            if expires_at < datetime.now():
-                return ActivateResponse(
-                    success=False,
-                    message="激活码已过期",
-                    error="CODE_EXPIRED"
-                )
-        
-        # 2. 激活会员
-        result = membership_service.activate_membership(
-            user_id=request.user_id,
-            tier=code_info['tier'],
-            months=code_info['subscription_period']
-        )
-        
-        # 3. 标记激活码为已使用
-        activation_service.use_activation_code(
-            code=request.activation_code,
-            used_by_user_id=request.user_id
-        )
-        
-        tier_names = {
-            'vip': 'VIP会员',
-            'pro': 'PRO会员',
-            'pro_plus': 'PRO+会员'
-        }
-        tier_name = tier_names.get(code_info['tier'], '会员')
-        
-        return ActivateResponse(
-            success=True,
-            message=f"恭喜！{tier_name}已激活，有效期{code_info['subscription_period']}个月",
-            data=result
-        )
-        
-    except Exception as e:
-        logger.error(f"[API] 激活会员失败: {e}", exc_info=True)
-        return ActivateResponse(
-            success=False,
-            message="激活失败",
-            error=str(e)
-        )
+    return ActivateResponse(
+        success=False,
+        message="激活码功能暂未实现",
+        error="FEATURE_NOT_AVAILABLE"
+    )
 
 
 @router.get("/consumption/{user_id}/history")

@@ -1,11 +1,5 @@
 /**
  * 品牌配置文件
- * 
- * 此文件在不同分支有不同内容：
- * - main 分支：开源版本配置
- * - enterprise 分支：企业版配置
- * 
- * Git 合并策略：merge=ours（自动保留当前分支版本，避免冲突）
  */
 
 export interface BrandingConfig {
@@ -15,7 +9,7 @@ export interface BrandingConfig {
   shortName: string;
   /** 应用描述 */
   description: string;
-  /** 是否为企业版 */
+  /** 扩展标识 */
   isEnterprise: boolean;
   /** 主题色 */
   primaryColor: string;
@@ -30,6 +24,5 @@ export const BRANDING: BrandingConfig = {
   isEnterprise: false,
   primaryColor: '#667eea',
   logoPath: '/assets/logo.png',
-  // 测试：验证配置系统工作正常
 };
 

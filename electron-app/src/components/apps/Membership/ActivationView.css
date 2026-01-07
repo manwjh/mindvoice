@@ -35,6 +35,91 @@
   margin-bottom: 18px;
 }
 
+/* 用户ID信息栏 */
+.user-id-section {
+  background: linear-gradient(135deg, #fff4e6 0%, #ffe8cc 100%);
+  border: 1px solid #ffd699;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.user-id-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.user-id-input {
+  flex: 1;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  letter-spacing: 0.5px;
+}
+
+.user-id-input:read-only {
+  background: #fafafa;
+  cursor: default;
+}
+
+.icon-button {
+  padding: 10px 12px;
+  font-size: 18px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 44px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+  transform: scale(1.05);
+}
+
+.icon-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.security-warning {
+  margin-top: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #d97706;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.activation-subtitle {
+  margin: 20px 0 16px 0;
+  font-size: 15px;
+  color: #4a5568;
+  text-align: center;
+  font-weight: 500;
+}
+
 .input-group {
   margin-bottom: 18px;
 }
@@ -82,8 +167,10 @@
   border-radius: 8px;
   margin-bottom: 18px;
   font-size: 13.5px;
-  text-align: center;
+  text-align: left;
   font-weight: 500;
+  white-space: pre-line;
+  line-height: 1.6;
 }
 
 .error-message {
@@ -189,6 +276,32 @@
 
   .activation-header h2 {
     font-size: 22px;
+  }
+
+  .user-id-section {
+    padding: 14px 16px;
+  }
+
+  .user-id-input {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  .icon-button {
+    font-size: 16px;
+    min-width: 40px;
+    height: 40px;
+    padding: 8px 10px;
+  }
+
+  .security-warning {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+
+  .activation-subtitle {
+    font-size: 14px;
+    margin: 16px 0 14px 0;
   }
 
   .activation-input {
