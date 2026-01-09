@@ -1,5 +1,5 @@
 # 语音桌面助手 (MindVoice)
-
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=115860366694076&bvid=BV1ehidBKEVc&cid=35269183392&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 一个基于AI的跨平台桌面语音助手，集成语音识别(ASR)和大语言模型(LLM)，提供多种智能语音应用。
 
 **English**: [README_EN.md](README_EN.md) | **项目英文名**: MindVoice
